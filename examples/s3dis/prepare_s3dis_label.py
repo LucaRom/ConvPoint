@@ -45,12 +45,12 @@ for Area in path_Dir_Areas:
             continue
         
         print(path_Annotations)
+
         # make store directories
-        # path_prepare_label = os.path.join("../../../data/S3DIS/prepare_label_rgb",Area,Room)
         path_prepare_label = os.path.join(args.dest, Area, Room)
         if not os.path.exists(path_prepare_label):
             os.makedirs(path_prepare_label)
-        #############################
+
         path_objects = os.listdir(path_Annotations)
         for Object in path_objects:
             if Object.split("_", 1)[0] in object_dict:
