@@ -10,8 +10,8 @@ ext_modules = [Extension(
        sources=["knn.pyx", "knn_.cxx",],  # source file(s)
        include_dirs=["./", numpy.get_include()],
        language="c++",            
-       extra_compile_args = [ "-std=c++11", "-fopenmp",],
-       extra_link_args=["-std=c++11", '-fopenmp'],
+       extra_compile_args = [ "-std=c++11", "/openmp",],
+       extra_link_args=["-std=c++11", '/openmp /VERBOSE'],
   )]
 
 setup(
