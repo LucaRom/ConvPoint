@@ -1,0 +1,2 @@
+lib\python\nearest_neighbors.cp37-win_amd64.pyd
+lib\python\KNN_NanoFLANN-0.0.0-py3.7.egg-info

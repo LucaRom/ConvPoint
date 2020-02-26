@@ -8,10 +8,10 @@ import numpy as np
 import argparse
 
 # BASE_DIR = os.path.join(os.path.dirname(__file__),'../../../data/Stanford3dDataset_v1.2_Aligned_Version')
-
+BASE_DIR = 'D:/DEV/superpoint_graph/datasets/Stanford3dDataset_v1.2_Aligned_Version/data'
 parser = argparse.ArgumentParser()
-parser.add_argument('--folder', '-f', help='Path to data folder')
-parser.add_argument("--dest")
+parser.add_argument('--folder', '-f', help='Path to data folder',default=BASE_DIR)
+parser.add_argument("--dest",default='D:/DEV/ConvPoint/data/s3dis')
 args = parser.parse_args()
 BASE_DIR = args.folder
 
