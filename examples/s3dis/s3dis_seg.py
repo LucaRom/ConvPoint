@@ -3,7 +3,7 @@
 # add the parent folder to the python path to access convpoint library
 import sys
 
-sys.path.append('D:/DEV/ConvPoint-Dev')
+sys.path.append('/wspace/disk01/lidar/convpoint_test/ConvPoint/convpoint')
 
 import argparse
 import os
@@ -318,7 +318,7 @@ def train(args, flist_train, flist_test):
             t.set_postfix(OA=wblue(oa), AA=wblue(aa), IOU=wblue(iou), LOSS=wblue(f"{train_loss / cm.sum():.4e}"))
 
         ######
-        ## validation
+        # validation
         net.eval()
         cm_test = np.zeros((N_CLASSES, N_CLASSES))
         test_loss = 0
@@ -434,9 +434,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--test", action="store_true")
     parser.add_argument("--ply", action="store_true", help="save ply files (test mode)")
-    parser.add_argument("--savedir", default='D:/DEV/ConvPoint/data/s3dis', type=str)
-    parser.add_argument("--rootdir", type=str,
-                        default='D:/DEV/ConvPoint/data/s3dis')
+    parser.add_argument("--savedir", default='/wspace/disk01/lidar/convpoint_tests/s3dis_results', type=str)
+    parser.add_argument("--rootdir", type=str, default='/wspace/disk01/lidar/convpoint_tests/s3dis_prepared')
     parser.add_argument("--batchsize", "-b", default=8, type=int)
     parser.add_argument("--npoints", default=8192, type=int)
     parser.add_argument("--area", default=1, type=int)
@@ -453,8 +452,8 @@ def main():
     parser.add_argument("--drop", default=0, type=float)
     args = parser.parse_args()
 
-    # create the filelits (train / val) according to area
-    print("Create filelist...", end="")
+    # create the file list (train / val) according to area
+    print("Create file list...", end="")
     filelist_train = []
     filelist_test = []
     for area_idx in range(1, 7):
