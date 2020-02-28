@@ -6,67 +6,91 @@ from __future__ import print_function
 import os
 import numpy as np
 import argparse
-
-# BASE_DIR = os.path.join(os.path.dirname(__file__),'../../../data/Stanford3dDataset_v1.2_Aligned_Version')
-parser = argparse.ArgumentParser()
-parser.add_argument('--folder', '-f', default='', help='Path to data folder')
-parser.add_argument("--dest", '-d', default='', help='Path to destination folder')
-args = parser.parse_args()
-BASE_DIR = args.folder
-
-object_dict = {
-    'clutter': 0,
-    'ceiling': 1,
-    'floor': 2,
-    'wall': 3,
-    'beam': 4,
-    'column': 5,
-    'door': 6,
-    'window': 7,
-    'table': 8,
-    'chair': 9,
-    'sofa': 10,
-    'bookcase': 11,
-    'board': 12}
-
-path_Dir_Areas = os.listdir(BASE_DIR)
-
-for Area in path_Dir_Areas:
-    if not os.path.isdir(os.path.join(BASE_DIR, Area)):
-        continue
-    path_Dir_Rooms = os.listdir(os.path.join(BASE_DIR, Area))
-    for Room in path_Dir_Rooms:
-
-        xyz_Room = np.zeros((1, 6))
-        label_Room = np.zeros((1, 1))
-        path_Annotations = os.path.join(BASE_DIR, Area, Room, "Annotations")
-        if not os.path.exists(path_Annotations):
-            print("Error {} does not exists".format(path_Annotations))
-            continue
-
-        print(path_Annotations)
-
-        # make store directories
-        path_prepare_label = os.path.join(args.dest, Area, Room)
-        if not os.path.exists(path_prepare_label):
-            os.makedirs(path_prepare_label)
-
-        path_objects = os.listdir(path_Annotations)
-        for Object in path_objects:
-            if Object.split("_", 1)[0] in object_dict:
-                print(f"{Object.split('_', 1)[0]} value: {object_dict[Object.split('_', 1)[0]]}")
-                xyz_object = np.loadtxt(os.path.join(path_Annotations, Object))[:, :]  # (N,6)
-                label_object = np.tile([object_dict[Object.split("_", 1)[0]]], (xyz_object.shape[0], 1))  # (N,1)
-            else:
-                continue
-
-            xyz_Room = np.vstack((xyz_Room, xyz_object))
-            label_Room = np.vstack((label_Room, label_object))
-
-        xyz_Room = np.delete(xyz_Room, [0], 0)
-        label_Room = np.delete(label_Room, [0], 0)
-
-        np.save(path_prepare_label + "/xyzrgb.npy", xyz_Room.astype(np.float16))
-        np.save(path_prepare_label + "/label.npy", label_Room)
+import warnings
+import laspy
 
 
+def read_las_format(raw_path, normalize=True):
+    """Extract data from a .las file.
+    If normalize is set to True, will normalize XYZ and intensity between 0 and 1."""
+
+    in_file = laspy.file.File(raw_path, mode='r')
+    n_points = len(in_file)
+    x = np.reshape(in_file.x, (n_points, 1))
+    y = np.reshape(in_file.y, (n_points, 1))
+    z = np.reshape(in_file.z, (n_points, 1))
+    intensity = np.reshape(in_file.intensity, (n_points, 1))
+    nb_return = np.reshape(in_file.num_returns, (n_points, 1))
+    labels = np.reshape(in_file.classification, (n_points, 1))
+    labels = format_classes(labels)
+
+    if normalize:
+        norm_x = (x - np.min(x)) / (np.max(x) - np.min(x))
+        norm_y = (y - np.min(y)) / (np.max(y) - np.min(y))
+        norm_z = (z - np.min(z)) / (np.max(z) - np.min(z))
+        norm_intensity = (intensity - np.min(intensity)) / (np.max(intensity) - np.min(intensity))
+        xyzni = np.hstack((norm_x, norm_y, norm_z, nb_return, norm_intensity)).astype(np.float16)
+    else:
+        xyzni = np.hstack((x, y, z, nb_return, intensity)).astype(np.float16)
+
+    return xyzni, labels, n_points
+
+
+def format_classes(labels):
+    """Format labels array to match the classes of interest. Specific to airborne_lidar dataset.
+    # Dict containing the mapping of input (from the .las file) and the output classes (for the training step).
+    # 6: Building
+    # 9: water
+    # 2: ground.
+    """
+    coi = {'6': 1, '9': 2, '2': 3}
+    labels2 = np.full(shape=labels.shape, fill_value=0, dtype=int)
+    for key, value in coi.items():
+        labels2[labels == int(key)] = value
+
+    return labels2
+
+
+def parse_args():
+    """
+    Parse arguments.
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--folder', '-f', default='/export/sata01/wspace/lidar/POINTCLOUD/data/', help='Path to data folder')
+    parser.add_argument("--dest", '-d', default='/export/sata01/wspace/lidar/convpoint_tests/prepared', help='Path to destination folder')
+    args = parser.parse_args()
+    return args
+
+
+def main():
+    args = parse_args()
+    base_dir = args.folder
+
+    dataset_dict = {'trn': [], 'val': [], 'tst': []}
+
+    for dataset in dataset_dict.keys():
+        for f in os.listdir(os.path.join(base_dir, dataset)):
+            if f.endswith('.las'):
+                dataset_dict[dataset].append(f)
+
+        if len(dataset_dict[dataset]) == 0:
+            warnings.warn(f"{os.path.join(base_dir, dataset)} is empty")
+
+    print(f"Las files per dataset:\n Trn: {len(dataset_dict['trn'])} \n Val: {len(dataset_dict['val'])} \n Tst: {len(dataset_dict['tst'])}")
+
+    for dst in dataset_dict:
+        for elem in dataset_dict[dst]:
+            # make store directories
+            path_prepare_label = os.path.join(args.dest, dst)
+            if not os.path.exists(path_prepare_label):
+                os.makedirs(path_prepare_label)
+
+            xyzni, label, nb_pts = read_las_format(os.path.join(base_dir, dst, elem))
+
+            np.save(f"{path_prepare_label}/{elem.split('.')[0]}_xyzni.npy", xyzni.astype(np.float16))
+            np.save(f"{path_prepare_label}/{elem.split('.')[0]}_label.npy", label.astype(np.uint8))
+            print(f"File {dst}/{elem} prepared. {nb_pts:,} points written.")
+
+
+if __name__ == "__main__":
+    main()

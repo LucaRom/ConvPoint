@@ -80,9 +80,9 @@ for filename in filelist_test:
     savedir = os.path.join(args.savedir, "test", "pointcloud_txt")
     os.makedirs(savedir, exist_ok=True)
     Sem3D.semantic3d_load_from_txt_voxel(os.path.join(args.rootdir, "TEST", filename_txt),
-                                                os.path.join(savedir, filename+"_voxels.txt"),
-                                                args.voxel
-                                                )
+                                         os.path.join(savedir, filename+"_voxels.txt"),
+                                         args.voxel
+                                         )
     
     # save the numpy data
     savedir_numpy = os.path.join(args.savedir, "test", "pointcloud")
