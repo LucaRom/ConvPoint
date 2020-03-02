@@ -2,7 +2,7 @@
 
 # add the parent folder to the python path to access convpoint library
 import sys
-
+import warnings
 sys.path.append('/wspace/disk01/lidar/convpoint_test/ConvPoint/convpoint')
 
 import argparse
@@ -17,10 +17,34 @@ import time
 import torch
 import torch.utils.data
 import torch.nn.functional as F
-import torchvision
 from torchvision import transforms
 import convpoint.knn.lib.python.nearest_neighbors as nearest_neighbors
 import utils.metrics as metrics
+from examples.airborne_lidar.airborne_lidar_utils import get_airborne_lidar_info
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--test", action="store_true")
+    parser.add_argument("--ply", action="store_true", help="save ply files (test mode)")
+    parser.add_argument("--savedir", default='/wspace/disk01/lidar/convpoint_tests/s3dis_results', type=str)
+    parser.add_argument("--rootdir", default='/wspace/disk01/lidar/convpoint_tests/s3dis_prepared', type=str)
+    parser.add_argument("--batchsize", "-b", default=16, type=int)
+    parser.add_argument("--npoints", default=8192, type=int)
+    parser.add_argument("--area", default=1, type=int)
+    parser.add_argument("--blocksize", default=2, type=int)
+    parser.add_argument("--iter", default=1000, type=int)
+    parser.add_argument("--threads", default=4, type=int)
+    parser.add_argument("--npick", default=16, type=int)
+    parser.add_argument("--savepts", action="store_true")
+    parser.add_argument("--nocolor", action="store_true")
+    parser.add_argument("--test_step", default=0.2, type=float)
+    parser.add_argument("--nepochs", default=50, type=int)
+    parser.add_argument("--jitter", default=0.4, type=float)
+    parser.add_argument("--model", default="SegBig", type=str)
+    parser.add_argument("--drop", default=0, type=float)
+    args = parser.parse_args()
+    return args
 
 
 class bcolors:
@@ -240,14 +264,15 @@ def get_model(model_name, input_channels, output_channels, args):
 
 
 def train(args, flist_train, flist_test):
-    N_CLASSES = 13
+    obj_classes = get_airborne_lidar_info()
+    nb_classes = len(obj_classes)
 
     # create the network
     print("Creating network...")
     if args.nocolor:
-        net = get_model(args.model, input_channels=1, output_channels=N_CLASSES, args=args)
+        net = get_model(args.model, input_channels=1, output_channels=nb_classes, args=args)
     else:
-        net = get_model(args.model, input_channels=3, output_channels=N_CLASSES, args=args)
+        net = get_model(args.model, input_channels=3, output_channels=nb_classes, args=args)
     net.cuda()
     print("parameters", count_parameters(net))
 
@@ -290,7 +315,7 @@ def train(args, flist_train, flist_test):
         net.train()
 
         train_loss = 0
-        cm = np.zeros((N_CLASSES, N_CLASSES))
+        cm = np.zeros((nb_classes, nb_classes))
         t = tqdm(train_loader, ncols=100, desc="Epoch {}".format(epoch))
         for pts, features, seg in t:
             features = features.cuda()
@@ -299,14 +324,14 @@ def train(args, flist_train, flist_test):
 
             optimizer.zero_grad()
             outputs = net(features, pts)
-            loss = F.cross_entropy(outputs.view(-1, N_CLASSES), seg.view(-1))
+            loss = F.cross_entropy(outputs.view(-1, nb_classes), seg.view(-1))
             loss.backward()
             optimizer.step()
 
             output_np = np.argmax(outputs.cpu().detach().numpy(), axis=2).copy()
             target_np = seg.cpu().numpy().copy()
 
-            cm_ = confusion_matrix(target_np.ravel(), output_np.ravel(), labels=list(range(N_CLASSES)))
+            cm_ = confusion_matrix(target_np.ravel(), output_np.ravel(), labels=list(range(nb_classes)))
             cm += cm_
 
             oa = f"{metrics.stats_overall_accuracy(cm):.5f}"
@@ -320,7 +345,7 @@ def train(args, flist_train, flist_test):
         ######
         # validation
         net.eval()
-        cm_test = np.zeros((N_CLASSES, N_CLASSES))
+        cm_test = np.zeros((nb_classes, nb_classes))
         test_loss = 0
         t = tqdm(test_loader, ncols=80, desc="  Test epoch {}".format(epoch))
         with torch.no_grad():
@@ -330,12 +355,12 @@ def train(args, flist_train, flist_test):
                 seg = seg.cuda()
 
                 outputs = net(features, pts)
-                loss = F.cross_entropy(outputs.view(-1, N_CLASSES), seg.view(-1))
+                loss = F.cross_entropy(outputs.view(-1, nb_classes), seg.view(-1))
 
                 output_np = np.argmax(outputs.cpu().detach().numpy(), axis=2).copy()
                 target_np = seg.cpu().numpy().copy()
 
-                cm_ = confusion_matrix(target_np.ravel(), output_np.ravel(), labels=list(range(N_CLASSES)))
+                cm_ = confusion_matrix(target_np.ravel(), output_np.ravel(), labels=list(range(nb_classes)))
                 cm_test += cm_
 
                 oa_val = f"{metrics.stats_overall_accuracy(cm_test):.5f}"
@@ -430,53 +455,30 @@ def test(args, flist_test):
             np.savetxt(save_fname, xyzrgb, fmt=['%.4f', '%.4f', '%.4f', '%d'])
 
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--test", action="store_true")
-    parser.add_argument("--ply", action="store_true", help="save ply files (test mode)")
-    parser.add_argument("--savedir", default='/wspace/disk01/lidar/convpoint_tests/s3dis_results', type=str)
-    parser.add_argument("--rootdir", type=str, default='/wspace/disk01/lidar/convpoint_tests/s3dis_prepared')
-    parser.add_argument("--batchsize", "-b", default=16, type=int)
-    parser.add_argument("--npoints", default=8192, type=int)
-    parser.add_argument("--area", default=1, type=int)
-    parser.add_argument("--blocksize", default=2, type=int)
-    parser.add_argument("--iter", default=1000, type=int)
-    parser.add_argument("--threads", default=4, type=int)
-    parser.add_argument("--npick", default=16, type=int)
-    parser.add_argument("--savepts", action="store_true")
-    parser.add_argument("--nocolor", action="store_true")
-    parser.add_argument("--test_step", default=0.2, type=float)
-    parser.add_argument("--nepochs", default=50, type=int)
-    parser.add_argument("--jitter", default=0.4, type=float)
-    parser.add_argument("--model", default="SegBig", type=str)
-    parser.add_argument("--drop", default=0, type=float)
-    args = parser.parse_args()
-    return args
-
-
 def main():
 
     args = parse_args()
 
-    # create the file list (train / val) according to area
-    print("Create file list...", end="")
-    filelist_train = []
-    filelist_test = []
-    for area_idx in range(1, 7):
-        folder = os.path.join(args.rootdir, f"Area_{area_idx}")
-        datasets = [os.path.join(f"Area_{area_idx}", dataset) for dataset in os.listdir(folder)]
-        if area_idx == args.area:
-            filelist_test = filelist_test + datasets
-        else:
-            filelist_train = filelist_train + datasets
-    filelist_train.sort()
-    filelist_test.sort()
-    print(f"done, {len(filelist_train)} train files, {len(filelist_test)} test files")
+    # create the file lists (trn / val / tst)
+    print("Create file list...")
+    base_dir = args.rootdir
+
+    dataset_dict = {'trn': [], 'val': [], 'tst': []}
+
+    for dataset in dataset_dict.keys():
+        for f in os.listdir(os.path.join(base_dir, dataset)):
+            if f.endswith('_label.npy'):
+                dataset_dict[dataset].append(f.split('_lapel.npy')[0])
+
+        if len(dataset_dict[dataset]) == 0:
+            warnings.warn(f"{os.path.join(base_dir, dataset)} is empty")
+
+    print(f"Las files per dataset:\n Trn: {len(dataset_dict['trn'])} \n Val: {len(dataset_dict['val'])} \n Tst: {len(dataset_dict['tst'])}")
 
     if args.test:
-        test(args, filelist_test)
+        test(args, dataset_dict['tst'])
     else:
-        train(args, filelist_train, filelist_test)
+        train(args, dataset_dict['trn'], dataset_dict['val'])
 
 
 if __name__ == '__main__':
