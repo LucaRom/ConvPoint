@@ -8,6 +8,7 @@ import numpy as np
 import argparse
 import warnings
 import laspy
+from examples.airborne_lidar.airborne_lidar_utils import write_features
 
 
 def read_las_format(raw_path, normalize=True):
@@ -25,9 +26,11 @@ def read_las_format(raw_path, normalize=True):
     labels = format_classes(labels)
 
     if normalize:
-        norm_x = (x - np.min(x)) / (np.max(x) - np.min(x))
-        norm_y = (y - np.min(y)) / (np.max(y) - np.min(y))
-        norm_z = (z - np.min(z)) / (np.max(z) - np.min(z))
+        # Converting data to relative xyz reference system.
+        norm_x = x - np.min(x)
+        norm_y = y - np.min(y)
+        norm_z = z - np.min(z)
+        # Intensity is normalized based on min max values.
         norm_intensity = (intensity - np.min(intensity)) / (np.max(intensity) - np.min(intensity))
         xyzni = np.hstack((norm_x, norm_y, norm_z, nb_return, norm_intensity)).astype(np.float16)
     else:
@@ -87,8 +90,7 @@ def main():
 
             xyzni, label, nb_pts = read_las_format(os.path.join(base_dir, dst, elem))
 
-            np.save(f"{path_prepare_label}/{elem.split('.')[0]}_xyzni.npy", xyzni.astype(np.float16))
-            np.save(f"{path_prepare_label}/{elem.split('.')[0]}_label.npy", label.astype(np.uint8))
+            write_features(f"{path_prepare_label}/{elem.split('.')[0]}_prepared.hdfs", xyzni=xyzni, labels=label)
             print(f"File {dst}/{elem} prepared. {nb_pts:,} points written.")
 
 
