@@ -6,15 +6,18 @@ import numpy as np
 import multiprocessing as mp
 from sklearn.neighbors import BallTree
 
+
 def mp_indices_conv(pts, K=16):
     tree = BallTree(pts, leaf_size=2)
     _, indices = tree.query(pts, k=K)
     return torch.LongTensor(indices).unsqueeze(0)
 
+
 def mp_indices_deconv(pts, pts_next, K):
     tree = BallTree(pts, leaf_size=2)
     _, indices = tree.query(pts_next, k=K)
     return torch.LongTensor(indices).unsqueeze(0)
+
 
 def mp_indices_conv_reduction(pts, K, npts):
     tree = BallTree(pts, leaf_size=2)
@@ -25,10 +28,10 @@ def mp_indices_conv_reduction(pts, K, npts):
     for ptid in range(npts):
 
         # index = np.random.randint(pts.shape[0])
-        possible_ids = np.argwhere(used==current_id).ravel().tolist()
-        while(len(possible_ids)==0):
+        possible_ids = np.argwhere(used == current_id).ravel().tolist()
+        while len(possible_ids) == 0:
             current_id = used.min()
-            possible_ids = np.argwhere(used==current_id).ravel().tolist()
+            possible_ids = np.argwhere(used == current_id).ravel().tolist()
 
         index = possible_ids[np.random.randint(len(possible_ids))]
 
@@ -39,7 +42,7 @@ def mp_indices_conv_reduction(pts, K, npts):
         dist, ids = tree.query([pt], k=K)
         ids = ids[0]
 
-        used[ids] +=1
+        used[ids] += 1
         used[index] += 1e7
 
         indices.append(ids.tolist())

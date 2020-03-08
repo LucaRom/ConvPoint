@@ -1,6 +1,7 @@
 import h5py
 import os
 
+
 def get_airborne_lidar_info():
     obj_classes = {
         'other': 0,

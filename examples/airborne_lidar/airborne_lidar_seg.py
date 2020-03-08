@@ -30,8 +30,8 @@ def parse_args():
     parser.add_argument("--rootdir", default='/wspace/disk01/lidar/convpoint_tests/prepared', type=str)
     parser.add_argument("--batchsize", "-b", default=16, type=int)
     parser.add_argument("--npoints", default=8168, type=int, help="Number of points to be sampled in the block.")
-    parser.add_argument("--blocksize", default=50, type=int, help="Radius of the search.")
-    parser.add_argument("--iter", default=2000, type=int)
+    parser.add_argument("--blocksize", default=25, type=int, help="Size of the infinite vertical column, to be processed.")
+    parser.add_argument("--iter", default=1000, type=int)
     parser.add_argument("--num_workers", default=8, type=int)
     parser.add_argument("--features", default="xyzni", type=str, help="Features to process. xyzni means xyz + number of returns + intensity. "
                                                                       "Currently, only xyz and xyzni are supported for this dataset.")
@@ -132,7 +132,7 @@ class PartDatasetTrainVal():
         mask = np.logical_and(mask_x, mask_y)
         pts = xyzni[mask]
         lbs = labels[mask]
-
+        # print(pts.shape)
         # Random selection of npoints in the masked points
         choice = np.random.choice(pts.shape[0], self.npoints, replace=True)
         pts = pts[choice]
@@ -277,6 +277,11 @@ def train(args, flist_trn, flist_val):
 
     # create the log file
     logs = open(os.path.join(root_folder, "log.txt"), "w")
+    per_class_log = open(os.path.join(root_folder, "per_class_fscore_log.txt"), "w")
+
+    # Write logs headers
+    logs.write(f"epoch oa aa iou oa_val aa_val iou_val\n")
+    per_class_log.write(f"Overall Other Building Water Ground\n")
 
     # iterate over epochs
     for epoch in range(args.nepochs):
@@ -312,7 +317,9 @@ def train(args, flist_trn, flist_val):
             train_loss += loss.detach().cpu().item()
 
             t.set_postfix(OA=wblue(oa), AA=wblue(aa), IOU=wblue(iou), LOSS=wblue(f"{train_loss / cm.sum():.4e}"))
-
+        fscore = metrics.stats_f1score_per_class(cm)
+        print(f"\nTraining F1-scores:\n  Overall: {fscore[0]:.3f}\n  Other: {fscore[1][0]:.3f}\n  "
+              f"Building: {fscore[1][1]:.3f}\n  Water: {fscore[1][2]:.3f}\n  Ground: {fscore[1][3]:.3f}")
         ######
         # validation
         net.eval()
@@ -343,11 +350,16 @@ def train(args, flist_trn, flist_val):
                 t.set_postfix(OA=wgreen(oa_val), AA=wgreen(aa_val), IOU=wgreen(iou_val),
                               LOSS=wgreen(f"{test_loss / cm_test.sum():.4e}"))
 
+        fscore = metrics.stats_f1score_per_class(cm_test)
+        print(f"\nValidation F1-scores:\n  Overall: {fscore[0]:.3f}\n  Other: {fscore[1][0]:.3f}\n  "
+              f"Building: {fscore[1][1]:.3f}\n  Water: {fscore[1][2]:.3f}\n  Ground: {fscore[1][3]:.3f}")
+
         # save the model
         torch.save(net.state_dict(), os.path.join(root_folder, "state_dict.pth"))
 
         # write the logs
         logs.write(f"{epoch} {oa} {aa} {iou} {oa_val} {aa_val} {iou_val}\n")
+        per_class_log.write(f"{fscore[0]:.3f} {fscore[1][0]:.3f} {fscore[1][1]:.3f} {fscore[1][2]:.3f} {fscore[1][3]:.3f}")
         logs.flush()
 
     logs.close()

@@ -8,6 +8,7 @@ import torch.nn.functional as F
 ## Shapenet
 ################################
 
+
 class SegSmall(nn.Module):
     def __init__(self, input_channels, output_channels, dimension=3):
         super(SegSmall, self).__init__()
