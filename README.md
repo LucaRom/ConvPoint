@@ -45,7 +45,7 @@ DOI = {10.2312/3dor.20191064}
 
 ## Platform
 
-The code was tested on Ubuntu 16.04 with Anaconda.
+The code was tested on Ubuntu 18.04 with Anaconda.
 
 ## Dependencies
 
@@ -54,17 +54,29 @@ The code was tested on Ubuntu 16.04 with Anaconda.
 - TQDM for progress bars
 - PlyFile
 - H5py
+- Cython
 
 All these dependencies can be install via conda in an Anaconda environment or via pip.
+
+### Installation
+Procedure to install all the dependencies:
+```bash
+conda create --name <name_of_your_env> python=3.6
+conda activate <name_of_your_env>
+conda install pytorch -c pytorch
+conda install scikit-learn tqdm h5py cython
+conda install -c conda-forge laspy
+pip install plyfile
+```
 
 ## The library
 
 ### Nearest neighbor module
 
-The ```nearest_neighbors``` directory contains a very small wrapper for [NanoFLANN](https://github.com/jlblancoc/nanoflann) with OpenMP.
+The `knn` directory contains a very small wrapper for [NanoFLANN](https://github.com/jlblancoc/nanoflann) with OpenMP.
 To compile the module:
 ```
-cd nearest_neighbors
+cd convpoint/knn
 python setup.py install --home="."
 ```
 
@@ -80,3 +92,4 @@ GlobalTags.legacy_layer_base(True)
 * [S3DIS](examples/s3dis/)
 * [Semantic3D](examples/semantic3d)
 * [NPM3D](examples/npm3d)
+* [Airborne Lidar](examples/airborne_lidar)

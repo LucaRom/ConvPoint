@@ -18,25 +18,26 @@ import torch.utils.data
 import torch.nn.functional as F
 import convpoint.knn.lib.python.nearest_neighbors as nearest_neighbors
 import utils.metrics as metrics
-from examples.airborne_lidar.airborne_lidar_utils import get_airborne_lidar_info
+from examples.airborne_lidar.airborne_lidar_utils import get_airborne_lidar_info, InformationLogger
 import h5py
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--test", action="store_true")
+    parser.add_argument("--test", default=True)
     parser.add_argument("--savepts", action="store_true")
     parser.add_argument("--savedir", default='/wspace/disk01/lidar/convpoint_tests/results', type=str)
     parser.add_argument("--rootdir", default='/wspace/disk01/lidar/convpoint_tests/prepared', type=str)
-    parser.add_argument("--batchsize", "-b", default=16, type=int)
+    parser.add_argument("--batchsize", "-b", default=10, type=int)
     parser.add_argument("--npoints", default=8168, type=int, help="Number of points to be sampled in the block.")
-    parser.add_argument("--blocksize", default=25, type=int, help="Size of the infinite vertical column, to be processed.")
-    parser.add_argument("--iter", default=1000, type=int)
+    parser.add_argument("--blocksize", default=35, type=int, help="Size of the infinite vertical column, to be processed.")
+    parser.add_argument("--iter", default=10, type=int)
     parser.add_argument("--num_workers", default=8, type=int)
     parser.add_argument("--features", default="xyzni", type=str, help="Features to process. xyzni means xyz + number of returns + intensity. "
                                                                       "Currently, only xyz and xyzni are supported for this dataset.")
-    parser.add_argument("--test_step", default=5, type=float)
-    parser.add_argument("--nepochs", default=50, type=int)
+    parser.add_argument("--test_step", default=15, type=float)
+    parser.add_argument("--test_labels", default=True, type=bool, help="Labels available for test dataset")
+    parser.add_argument("--nepochs", default=1, type=int)
     parser.add_argument("--model", default="SegBig", type=str, help="SegBig is the only available model at this time, for this dataset.")
     parser.add_argument("--drop", default=0, type=float)
 
@@ -201,11 +202,13 @@ class PartDatasetTest():
         choice = np.random.choice(pts.shape[0], self.npoints, replace=True)
         pts = pts[choice]
 
-        if self.labels is not None:
-            lbs = self.labels[choice]
-        else:
-            # labels will contain indices in the original point cloud
-            lbs = np.where(mask)[0][choice]
+        # if self.labels is not None:
+        #     lbs = self.labels[choice]
+        # else:
+        #     lbs = None
+
+        # labels will contain indices in the original point cloud
+        indices = np.where(mask)[0][choice]
 
         # separate between features and points
         if self.features is False:
@@ -218,9 +221,10 @@ class PartDatasetTest():
 
         pts = torch.from_numpy(pts).float()
         fts = torch.from_numpy(fts).float()
-        lbs = torch.from_numpy(lbs).long()
+        # lbs = torch.from_numpy(lbs).long()
+        indices = torch.from_numpy(indices).long()
 
-        return pts, fts, lbs
+        return pts, fts, indices
 
     def __len__(self):
         return len(self.pts)
@@ -263,9 +267,9 @@ def train(args, flist_trn, flist_val):
 
     ds_val = PartDatasetTrainVal(filelist=flist_val, folder=args.rootdir, training=False, block_size=args.blocksize,
                                  npoints=args.npoints, iteration_number=round(args.batchsize * (args.iter / 10)), features=features)
-    test_loader = torch.utils.data.DataLoader(ds_val, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
+    val_loader = torch.utils.data.DataLoader(ds_val, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
 
-    optimizer = torch.optim.Adam(net.parameters(), lr=args.lr)
+    optimizer = torch.optim.Adam(net.parameters(), lr=float(args.lr))
     print("done")
 
     # create the root folder
@@ -276,12 +280,8 @@ def train(args, flist_trn, flist_val):
     print("done at", root_folder)
 
     # create the log file
-    logs = open(os.path.join(root_folder, "log.txt"), "w")
-    per_class_log = open(os.path.join(root_folder, "per_class_fscore_log.txt"), "w")
-
-    # Write logs headers
-    logs.write(f"epoch oa aa iou oa_val aa_val iou_val\n")
-    per_class_log.write(f"Overall Other Building Water Ground\n")
+    trn_logs = InformationLogger(root_folder, 'trn')
+    val_logs = InformationLogger(root_folder, 'val')
 
     # iterate over epochs
     for epoch in range(args.nepochs):
@@ -311,21 +311,24 @@ def train(args, flist_trn, flist_val):
             cm += cm_
 
             oa = f"{metrics.stats_overall_accuracy(cm):.4f}"
-            aa = f"{metrics.stats_accuracy_per_class(cm)[0]:.4f}"
-            iou = f"{metrics.stats_iou_per_class(cm)[0]:.4f}"
+            acc = metrics.stats_accuracy_per_class(cm)
+            iou = metrics.stats_iou_per_class(cm)
 
             train_loss += loss.detach().cpu().item()
 
-            t.set_postfix(OA=wblue(oa), AA=wblue(aa), IOU=wblue(iou), LOSS=wblue(f"{train_loss / cm.sum():.4e}"))
+            t.set_postfix(OA=wblue(oa), AA=wblue(f"{acc[0]:.4f}"), IOU=wblue(f"{iou[0]:.4f}"), LOSS=wblue(f"{train_loss / cm.sum():.4e}"))
         fscore = metrics.stats_f1score_per_class(cm)
-        print(f"\nTraining F1-scores:\n  Overall: {fscore[0]:.3f}\n  Other: {fscore[1][0]:.3f}\n  "
-              f"Building: {fscore[1][1]:.3f}\n  Water: {fscore[1][2]:.3f}\n  Ground: {fscore[1][3]:.3f}")
+        trn_metrics_values = {'loss': f"{train_loss / cm.sum():.4e}", 'acc': acc[0], 'iou': iou[0], 'fscore': fscore[0]}
+        trn_class_score = {'acc': acc[1], 'iou': iou[1], 'fscore': fscore[1]}
+        trn_logs.add_metric_values(trn_metrics_values, epoch)
+        trn_logs.add_class_scores(trn_class_score, epoch)
+
         ######
         # validation
         net.eval()
-        cm_test = np.zeros((nb_classes, nb_classes))
-        test_loss = 0
-        t = tqdm(test_loader, ncols=150, desc="  Test epoch {}".format(epoch))
+        cm_val = np.zeros((nb_classes, nb_classes))
+        val_loss = 0
+        t = tqdm(val_loader, ncols=150, desc="  Validation epoch {}".format(epoch))
         with torch.no_grad():
             for pts, features, seg in t:
                 features = features.cuda()
@@ -339,30 +342,29 @@ def train(args, flist_trn, flist_val):
                 target_np = seg.cpu().numpy().copy()
 
                 cm_ = confusion_matrix(target_np.ravel(), output_np.ravel(), labels=list(range(nb_classes)))
-                cm_test += cm_
+                cm_val += cm_
 
-                oa_val = f"{metrics.stats_overall_accuracy(cm_test):.4f}"
-                aa_val = f"{metrics.stats_accuracy_per_class(cm_test)[0]:.4f}"
-                iou_val = f"{metrics.stats_iou_per_class(cm_test)[0]:.4f}"
+                oa_val = f"{metrics.stats_overall_accuracy(cm_val):.4f}"
+                acc_val = metrics.stats_accuracy_per_class(cm_val)
+                iou_val = metrics.stats_iou_per_class(cm_val)
 
-                test_loss += loss.detach().cpu().item()
+                val_loss += loss.detach().cpu().item()
 
-                t.set_postfix(OA=wgreen(oa_val), AA=wgreen(aa_val), IOU=wgreen(iou_val),
-                              LOSS=wgreen(f"{test_loss / cm_test.sum():.4e}"))
+                t.set_postfix(OA=wgreen(oa_val), AA=wgreen(f"{acc_val[0]:.4f}"), IOU=wgreen(f"{iou_val[0]:.4f}"),
+                              LOSS=wgreen(f"{val_loss / cm_val.sum():.4e}"))
 
-        fscore = metrics.stats_f1score_per_class(cm_test)
-        print(f"\nValidation F1-scores:\n  Overall: {fscore[0]:.3f}\n  Other: {fscore[1][0]:.3f}\n  "
-              f"Building: {fscore[1][1]:.3f}\n  Water: {fscore[1][2]:.3f}\n  Ground: {fscore[1][3]:.3f}")
+        fscore_val = metrics.stats_f1score_per_class(cm_val)
 
         # save the model
         torch.save(net.state_dict(), os.path.join(root_folder, "state_dict.pth"))
 
         # write the logs
-        logs.write(f"{epoch} {oa} {aa} {iou} {oa_val} {aa_val} {iou_val}\n")
-        per_class_log.write(f"{fscore[0]:.3f} {fscore[1][0]:.3f} {fscore[1][1]:.3f} {fscore[1][2]:.3f} {fscore[1][3]:.3f}")
-        logs.flush()
+        val_metrics_values = {'loss': f"{val_loss / cm_val.sum():.4e}", 'acc': acc_val[0], 'iou': iou_val[0], 'fscore': fscore_val[0]}
+        val_class_score = {'acc': acc_val[1], 'iou': iou_val[1], 'fscore': fscore_val[1]}
 
-    logs.close()
+        val_logs.add_metric_values(val_metrics_values, epoch)
+        val_logs.add_class_scores(val_class_score, epoch)
+
     return root_folder
 
 
@@ -377,12 +379,13 @@ def test(args, flist_test, model_folder):
     net.load_state_dict(torch.load(os.path.join(model_folder, "state_dict.pth")))
     net.cuda()
     net.eval()
-    print(f"Number of parameters in the model: {count_parameters(net)}")
+    print(f"Number of parameters in the model: {count_parameters(net):,}")
 
+    cm = np.zeros((nb_classes, nb_classes))
     for filename in flist_test:
         print(filename)
         ds_tst = PartDatasetTest(filename, args.rootdir, block_size=args.blocksize,
-                                 npoints=args.npoints, test_step=args.test_step, features=features, labels=True)
+                                 npoints=args.npoints, test_step=args.test_step, features=features, labels=args.test_labels)
         tst_loader = torch.utils.data.DataLoader(ds_tst, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
 
         xyz = ds_tst.xyzni[:, :3]
@@ -417,12 +420,30 @@ def test(args, flist_test, model_folder):
         scores = scores - scores.max(axis=1)[:, None]
         scores = np.exp(scores) / np.exp(scores).sum(1)[:, None]
         scores = np.nan_to_num(scores)
+        scores = scores.argmax(1)
+
+        # Compute confusion matrix
+        if args.test_labels:
+            lbl = ds_tst.labels[:, :]
+
+            cm = confusion_matrix(lbl.ravel(), scores.ravel(), labels=list(range(nb_classes)))
+
+            cl_acc = metrics.stats_accuracy_per_class(cm)
+            cl_iou = metrics.stats_iou_per_class(cm)
+            cl_fscore = metrics.stats_f1score_per_class(cm)
+
+            print(f"Stats for test dataset:\n  "
+                  f"Accuracy:  "
+                  f"Overall: {cl_acc[0]:.3f}Other: {cl_acc[1][0]:.3f} Building: {cl_acc[1][1]:.3f} Water: {cl_acc[1][2]:.3f} Ground: {cl_acc[1][3]:.3f}\n  "
+                  f"iou:       "
+                  f"Overall: {cl_iou[0]:.3f}Other: {cl_iou[1][0]:.3f} Building: {cl_iou[1][1]:.3f} Water: {cl_iou[1][2]:.3f} Ground: {cl_iou[1][3]:.3f}\n  "
+                  f"fscore:    "
+                  f"Overall: {cl_fscore[1][0]:.3f}Other: {cl_fscore[1][0]:.3f} Building: {cl_fscore[1][1]:.3f} Water: {cl_fscore[1][2]:.3f} Ground: {cl_fscore[1][3]:.3f}")
 
         os.makedirs(os.path.join(args.savedir, filename), exist_ok=True)
 
         # saving labels
         save_fname = os.path.join(args.savedir, filename, "pred.txt")
-        scores = scores.argmax(1)
         np.savetxt(save_fname, scores, fmt='%d')
 
         if args.savepts:
