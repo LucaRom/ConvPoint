@@ -18,7 +18,7 @@ import torch.utils.data
 import torch.nn.functional as F
 import convpoint.knn.lib.python.nearest_neighbors as nearest_neighbors
 import utils.metrics as metrics
-from examples.airborne_lidar.airborne_lidar_utils import get_airborne_lidar_info, InformationLogger
+from examples.airborne_lidar.airborne_lidar_utils import get_airborne_lidar_info, InformationLogger, print_metric, write_config
 import h5py
 
 
@@ -202,12 +202,7 @@ class PartDatasetTest():
         choice = np.random.choice(pts.shape[0], self.npoints, replace=True)
         pts = pts[choice]
 
-        # if self.labels is not None:
-        #     lbs = self.labels[choice]
-        # else:
-        #     lbs = None
-
-        # labels will contain indices in the original point cloud
+        # indices in the original point cloud
         indices = np.where(mask)[0][choice]
 
         # separate between features and points
@@ -221,7 +216,6 @@ class PartDatasetTest():
 
         pts = torch.from_numpy(pts).float()
         fts = torch.from_numpy(fts).float()
-        # lbs = torch.from_numpy(lbs).long()
         indices = torch.from_numpy(indices).long()
 
         return pts, fts, indices
@@ -277,6 +271,7 @@ def train(args, flist_trn, flist_val):
     time_string = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
     root_folder = os.path.join(args.savedir, f"{args.model}_{args.npoints}_drop{args.drop}_{time_string}")
     os.makedirs(root_folder, exist_ok=True)
+    write_config(root_folder, args)
     print("done at", root_folder)
 
     # create the log file
@@ -322,6 +317,7 @@ def train(args, flist_trn, flist_val):
         trn_class_score = {'acc': acc[1], 'iou': iou[1], 'fscore': fscore[1]}
         trn_logs.add_metric_values(trn_metrics_values, epoch)
         trn_logs.add_class_scores(trn_class_score, epoch)
+        print_metric('Training', 'F1-Score', fscore)
 
         ######
         # validation
@@ -364,6 +360,7 @@ def train(args, flist_trn, flist_val):
 
         val_logs.add_metric_values(val_metrics_values, epoch)
         val_logs.add_class_scores(val_class_score, epoch)
+        print_metric('Validation', 'F1-Score', fscore_val)
 
     return root_folder
 
@@ -432,13 +429,10 @@ def test(args, flist_test, model_folder):
             cl_iou = metrics.stats_iou_per_class(cm)
             cl_fscore = metrics.stats_f1score_per_class(cm)
 
-            print(f"Stats for test dataset:\n  "
-                  f"Accuracy:  "
-                  f"Overall: {cl_acc[0]:.3f}Other: {cl_acc[1][0]:.3f} Building: {cl_acc[1][1]:.3f} Water: {cl_acc[1][2]:.3f} Ground: {cl_acc[1][3]:.3f}\n  "
-                  f"iou:       "
-                  f"Overall: {cl_iou[0]:.3f}Other: {cl_iou[1][0]:.3f} Building: {cl_iou[1][1]:.3f} Water: {cl_iou[1][2]:.3f} Ground: {cl_iou[1][3]:.3f}\n  "
-                  f"fscore:    "
-                  f"Overall: {cl_fscore[1][0]:.3f}Other: {cl_fscore[1][0]:.3f} Building: {cl_fscore[1][1]:.3f} Water: {cl_fscore[1][2]:.3f} Ground: {cl_fscore[1][3]:.3f}")
+            print(f"Stats for test dataset:")
+            print_metric('Test', 'Accuracy', cl_acc)
+            print_metric('Test', 'iou', cl_iou)
+            print_metric('Test', 'F1-Score', cl_fscore)
 
         os.makedirs(os.path.join(args.savedir, filename), exist_ok=True)
 

@@ -1,6 +1,7 @@
 import h5py
 import os
 import warnings
+import yaml
 
 
 def tsv_line(*args):
@@ -55,15 +56,18 @@ class InformationLogger(object):
         for key, value in values.items():
             if key in self.class_scores:
                 counter = 0
-                if key == 'fscore':
-                    self._print_metric(self.mode, value)
                 for num in value:
-                    print(tsv_line(epoch, counter, num))
                     self.class_scores[key].write(tsv_line(epoch, counter, num))
                     counter += 1
             else:
                 warnings.warn(f"Unknown metric {key}")
 
-    @staticmethod
-    def _print_metric(mode, values):
-        print(f"\n{mode} F1-scores:\n  Other: {values[0]:.3f}\n  Building: {values[1]:.3f}\n  Water: {values[2]:.3f}\n  Ground: {values[3]:.3f}")
+
+def print_metric(mode, metric, values):
+    print(f"\n{mode} {metric}:\n  Overall: {values[0]:.3f}\n  Other: {values[1][0]:.3f}\n  Building: {values[1][1]:.3f}\n  "
+          f"Water: {values[1][2]:.3f}\n  Ground: {values[1][3]:.3f}")
+
+
+def write_config(folder, args):
+    with open(os.path.join(folder, 'config.yaml'), 'w') as outfile:
+        yaml.dump(args, outfile, default_flow_style=False)
