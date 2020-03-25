@@ -245,7 +245,7 @@ def get_model(nb_classes, args):
     return Net(input_channels, output_channels=nb_classes, args=args), features
 
 
-def train(args, flist_trn, flist_val):
+def train(args, dataset_dict):
     obj_classes = get_airborne_lidar_info()
     nb_classes = len(obj_classes)
 
@@ -256,11 +256,11 @@ def train(args, flist_trn, flist_val):
     print(f"Number of parameters in the model: {count_parameters(net):,}")
 
     print("Creating dataloader and optimizer...", end="")
-    ds_trn = PartDatasetTrainVal(filelist=flist_trn, folder=args.rootdir, training=True, block_size=args.blocksize,
+    ds_trn = PartDatasetTrainVal(filelist=dataset_dict['trn'], folder=args.rootdir, training=True, block_size=args.blocksize,
                                  npoints=args.npoints, iteration_number=args.batchsize * args.iter, features=features)
     train_loader = torch.utils.data.DataLoader(ds_trn, batch_size=args.batchsize, shuffle=True, num_workers=args.num_workers)
 
-    ds_val = PartDatasetTrainVal(filelist=flist_val, folder=args.rootdir, training=False, block_size=args.blocksize,
+    ds_val = PartDatasetTrainVal(filelist=dataset_dict['val'], folder=args.rootdir, training=False, block_size=args.blocksize,
                                  npoints=args.npoints, iteration_number=args.batchsize * args.val_iter, features=features)
     val_loader = torch.utils.data.DataLoader(ds_val, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
 
@@ -272,7 +272,9 @@ def train(args, flist_trn, flist_val):
     time_string = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
     root_folder = os.path.join(args.savedir, f"{args.model}_{args.npoints}_drop{args.drop}_{time_string}")
     os.makedirs(root_folder, exist_ok=True)
-    write_config(root_folder, args)
+    args_dict = vars(args)
+    args_dict['data'] = dataset_dict
+    write_config(root_folder, args_dict)
     print("done at", root_folder)
 
     # create the log file
@@ -437,8 +439,8 @@ def test(args, flist_test, model_folder):
             print_metric('Test', 'F1-Score', cl_fscore)
             tst_avg_score = {'loss': -1, 'acc': cl_acc[0], 'iou': cl_iou[0], 'fscore': [0]}
             tst_class_score = {'acc': cl_acc[1], 'iou': cl_iou[1], 'fscore': cl_fscore[1]}
-            tst_logs.add_metric_values(tst_avg_score, 50)
-            tst_logs.add_class_scores(tst_class_score, 50)
+            tst_logs.add_metric_values(tst_avg_score, -1)
+            tst_logs.add_class_scores(tst_class_score, -1)
 
         os.makedirs(os.path.join(model_folder, filename), exist_ok=True)
 
@@ -471,7 +473,7 @@ def main():
 
     print(f"Las files per dataset:\n Trn: {len(dataset_dict['trn'])} \n Val: {len(dataset_dict['val'])} \n Tst: {len(dataset_dict['tst'])}")
 
-    model_folder = train(args, dataset_dict['trn'], dataset_dict['val'])
+    model_folder = train(args, dataset_dict)
 
     if args.test:
         test(args, dataset_dict['tst'], model_folder)

@@ -70,4 +70,4 @@ def print_metric(mode, metric, values):
 
 def write_config(folder, args):
     with open(os.path.join(folder, 'config.yaml'), 'w') as outfile:
-        yaml.dump(vars(args), outfile, default_flow_style=False)
+        yaml.dump(args, outfile, default_flow_style=False)
