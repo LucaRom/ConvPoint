@@ -31,12 +31,13 @@ def parse_args():
     parser.add_argument("--batchsize", "-b", default=10, type=int)
     parser.add_argument("--npoints", default=8168, type=int, help="Number of points to be sampled in the block.")
     parser.add_argument("--blocksize", default=35, type=int, help="Size of the infinite vertical column, to be processed.")
-    parser.add_argument("--iter", default=10, type=int)
+    parser.add_argument("--iter", default=1, type=int)
     parser.add_argument("--num_workers", default=8, type=int)
     parser.add_argument("--features", default="xyzni", type=str, help="Features to process. xyzni means xyz + number of returns + intensity. "
                                                                       "Currently, only xyz and xyzni are supported for this dataset.")
     parser.add_argument("--test_step", default=15, type=float)
     parser.add_argument("--test_labels", default=True, type=bool, help="Labels available for test dataset")
+    parser.add_argument("--val_iter", default=1, type=int, help="Number of iterations at validation.")
     parser.add_argument("--nepochs", default=1, type=int)
     parser.add_argument("--model", default="SegBig", type=str, help="SegBig is the only available model at this time, for this dataset.")
     parser.add_argument("--drop", default=0, type=float)
@@ -260,7 +261,7 @@ def train(args, flist_trn, flist_val):
     train_loader = torch.utils.data.DataLoader(ds_trn, batch_size=args.batchsize, shuffle=True, num_workers=args.num_workers)
 
     ds_val = PartDatasetTrainVal(filelist=flist_val, folder=args.rootdir, training=False, block_size=args.blocksize,
-                                 npoints=args.npoints, iteration_number=round(args.batchsize * (args.iter / 10)), features=features)
+                                 npoints=args.npoints, iteration_number=args.batchsize * args.val_iter, features=features)
     val_loader = torch.utils.data.DataLoader(ds_val, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
 
     optimizer = torch.optim.Adam(net.parameters(), lr=float(args.lr))
@@ -421,6 +422,7 @@ def test(args, flist_test, model_folder):
 
         # Compute confusion matrix
         if args.test_labels:
+            tst_logs = InformationLogger(model_folder, 'tst')
             lbl = ds_tst.labels[:, :]
 
             cm = confusion_matrix(lbl.ravel(), scores.ravel(), labels=list(range(nb_classes)))
@@ -433,15 +435,19 @@ def test(args, flist_test, model_folder):
             print_metric('Test', 'Accuracy', cl_acc)
             print_metric('Test', 'iou', cl_iou)
             print_metric('Test', 'F1-Score', cl_fscore)
+            tst_avg_score = {'loss': -1, 'acc': cl_acc[0], 'iou': cl_iou[0], 'fscore': [0]}
+            tst_class_score = {'acc': cl_acc[1], 'iou': cl_iou[1], 'fscore': cl_fscore[1]}
+            tst_logs.add_metric_values(tst_avg_score, 50)
+            tst_logs.add_class_scores(tst_class_score, 50)
 
-        os.makedirs(os.path.join(args.savedir, filename), exist_ok=True)
+        os.makedirs(os.path.join(model_folder, filename), exist_ok=True)
 
         # saving labels
-        save_fname = os.path.join(args.savedir, filename, "pred.txt")
+        save_fname = os.path.join(model_folder, filename, "pred.txt")
         np.savetxt(save_fname, scores, fmt='%d')
 
         if args.savepts:
-            save_fname = os.path.join(args.savedir, filename, "pts.txt")
+            save_fname = os.path.join(model_folder, filename, "pts.txt")
             xyzni = np.concatenate([xyz, np.expand_dims(scores, 1)], axis=1)
             np.savetxt(save_fname, xyzni, fmt=['%.4f', '%.4f', '%.4f', '%d'])
 
