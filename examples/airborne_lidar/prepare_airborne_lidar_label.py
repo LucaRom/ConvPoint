@@ -23,7 +23,6 @@ def read_las_format(raw_path, normalize=True):
     intensity = np.reshape(in_file.intensity, (n_points, 1))
     nb_return = np.reshape(in_file.num_returns, (n_points, 1))
     labels = np.reshape(in_file.classification, (n_points, 1))
-    labels = format_classes(labels)
 
     if normalize:
         # Converting data to relative xyz reference system.
@@ -37,21 +36,6 @@ def read_las_format(raw_path, normalize=True):
         xyzni = np.hstack((x, y, z, nb_return, intensity)).astype(np.float16)
 
     return xyzni, labels, n_points
-
-
-def format_classes(labels):
-    """Format labels array to match the classes of interest. Specific to airborne_lidar dataset.
-    # Dict containing the mapping of input (from the .las file) and the output classes (for the training step).
-    # 6: Building
-    # 9: water
-    # 2: ground.
-    """
-    coi = {'6': 1, '9': 2, '2': 3}
-    labels2 = np.full(shape=labels.shape, fill_value=0, dtype=int)
-    for key, value in coi.items():
-        labels2[labels == int(key)] = value
-
-    return labels2
 
 
 def parse_args():

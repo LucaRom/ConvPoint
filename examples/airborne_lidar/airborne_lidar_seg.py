@@ -30,19 +30,22 @@ def parse_args():
     parser.add_argument("--rootdir", default='/wspace/disk01/lidar/convpoint_tests/prepared', type=str)
     parser.add_argument("--batchsize", "-b", default=10, type=int)
     parser.add_argument("--npoints", default=8168, type=int, help="Number of points to be sampled in the block.")
-    parser.add_argument("--blocksize", default=35, type=int, help="Size of the infinite vertical column, to be processed.")
-    parser.add_argument("--iter", default=1, type=int)
+    parser.add_argument("--blocksize", default=50, type=int, help="Size of the infinite vertical column, to be processed.")
+    parser.add_argument("--iter", default=100, type=int)
     parser.add_argument("--num_workers", default=8, type=int)
     parser.add_argument("--features", default="xyzni", type=str, help="Features to process. xyzni means xyz + number of returns + intensity. "
                                                                       "Currently, only xyz and xyzni are supported for this dataset.")
     parser.add_argument("--test_step", default=15, type=float)
     parser.add_argument("--test_labels", default=True, type=bool, help="Labels available for test dataset")
-    parser.add_argument("--val_iter", default=1, type=int, help="Number of iterations at validation.")
+    parser.add_argument("--val_iter", default=100, type=int, help="Number of iterations at validation.")
     parser.add_argument("--nepochs", default=1, type=int)
     parser.add_argument("--model", default="SegBig", type=str, help="SegBig is the only available model at this time, for this dataset.")
     parser.add_argument("--drop", default=0, type=float)
 
     parser.add_argument("--lr", default=1e-3, help="Learning rate")
+    parser.add_argument("--mode", default=1, type=int, help="Class mode. Currently 2 choices available. "
+                                                            "1: building, water, ground."
+                                                            "2: building, water, ground, low vegetation and medium + high vegetation")
     args = parser.parse_args()
     return args
 
@@ -100,10 +103,29 @@ def rotate_point_cloud_z(batch_data):
     return np.dot(batch_data, rotation_matrix)
 
 
+def mode_selection(class_mode):
+    """
+    # Dict containing the mapping of input (from the .las file) and the output classes (for the training step).
+    # 6: Building
+    # 9: water
+    # 2: ground
+    # 3: low vegetation
+    # 4: medium vegetation
+    # 5: high vegetation
+    """
+    if class_mode == 1:
+        coi = {'6': 1, '9': 2, '2': 3}
+    elif class_mode == 2:
+        coi = {'6': 1, '9': 2, '2': 3, '3': 4, '4': 5, '5': 5}
+    else:
+        raise ValueError(f"Class formatting provided ({class_mode}) is not defined.")
+    return coi, len(coi) + 1
+
+
 # Part dataset only for training / validation
 class PartDatasetTrainVal():
 
-    def __init__(self, filelist, folder, training, block_size, npoints, iteration_number, features):
+    def __init__(self, filelist, folder, training, block_size, npoints, iteration_number, features, coi):
 
         self.filelist = filelist
         self.folder = folder
@@ -112,6 +134,7 @@ class PartDatasetTrainVal():
         self.npoints = npoints
         self.iterations = iteration_number
         self.features = features
+        self.coi = coi
 
     def __getitem__(self, index):
 
@@ -123,6 +146,7 @@ class PartDatasetTrainVal():
         # Get the features
         xyzni = data_file["xyzni"][:]
         labels = data_file["labels"][:]
+        labels = self.format_classes(labels)
 
         # pick a random point
         pt_id = random.randint(0, xyzni.shape[0] - 1)
@@ -161,6 +185,16 @@ class PartDatasetTrainVal():
     def __len__(self):
         return self.iterations
 
+    def format_classes(self, labels):
+        """Format labels array to match the classes of interest.
+        Labels with keys not defined in the coi dict will be set to 0.
+        """
+        labels2 = np.full(shape=labels.shape, fill_value=0, dtype=int)
+        for key, value in self.coi.items():
+            labels2[labels == int(key)] = value
+
+        return labels2
+
 
 # Part dataset only for testing
 class PartDatasetTest():
@@ -172,7 +206,7 @@ class PartDatasetTest():
         mask = np.logical_and(mask_x, mask_y)
         return mask
 
-    def __init__(self, filename, folder, block_size=8, npoints=8192, test_step=5, features=False, labels=False):
+    def __init__(self, filename, folder, block_size=8, npoints=8192, test_step=5, features=False, labels=True):
 
         self.filename = filename
         self.folder = folder
@@ -246,22 +280,20 @@ def get_model(nb_classes, args):
 
 
 def train(args, dataset_dict):
-    obj_classes = get_airborne_lidar_info()
-    nb_classes = len(obj_classes)
+    coi, nb_classes = mode_selection(args.mode)
 
     print("Creating network...")
     net, features = get_model(nb_classes, args)
-
     net.cuda()
     print(f"Number of parameters in the model: {count_parameters(net):,}")
 
     print("Creating dataloader and optimizer...", end="")
     ds_trn = PartDatasetTrainVal(filelist=dataset_dict['trn'], folder=args.rootdir, training=True, block_size=args.blocksize,
-                                 npoints=args.npoints, iteration_number=args.batchsize * args.iter, features=features)
+                                 npoints=args.npoints, iteration_number=args.batchsize * args.iter, features=features, coi=coi)
     train_loader = torch.utils.data.DataLoader(ds_trn, batch_size=args.batchsize, shuffle=True, num_workers=args.num_workers)
 
     ds_val = PartDatasetTrainVal(filelist=dataset_dict['val'], folder=args.rootdir, training=False, block_size=args.blocksize,
-                                 npoints=args.npoints, iteration_number=args.batchsize * args.val_iter, features=features)
+                                 npoints=args.npoints, iteration_number=args.batchsize * args.val_iter, features=features, coi=coi)
     val_loader = torch.utils.data.DataLoader(ds_val, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
 
     optimizer = torch.optim.Adam(net.parameters(), lr=float(args.lr))
@@ -381,7 +413,6 @@ def test(args, flist_test, model_folder):
     net.eval()
     print(f"Number of parameters in the model: {count_parameters(net):,}")
 
-    cm = np.zeros((nb_classes, nb_classes))
     for filename in flist_test:
         print(filename)
         ds_tst = PartDatasetTest(filename, args.rootdir, block_size=args.blocksize,
