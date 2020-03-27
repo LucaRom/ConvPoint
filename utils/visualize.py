@@ -16,16 +16,9 @@ import numpy as np
 def parse_args():
 
     parser = argparse.ArgumentParser(description='Custom visualization script')
-    # parser.add_argument('--dataset', default='airborne_lidar', help='dataset name: sema3d|s3dis')
     parser.add_argument('--ROOT_PATH', default='/wspace/disk01/lidar/POINTCLOUD', help='folder containing labeled data')
     parser.add_argument('--res_file', default='', help='folder containing the results')
     parser.add_argument('--model_folder', help='Folder containing the model ')
-    # parser.add_argument('--supervized_partition', type=int, default=0)
-    # parser.add_argument('--file_path', default='Area_1/conferenceRoom_1', help='file to output (must include the area / set in its path)')
-    # parser.add_argument('--upsample', default=0, type=int, help='if 1, upsample the prediction to the original cloud '
-    #                                                             '(if the files is huge it can take a very long and use a lot of memory : '
-    #                                                             'do not use on sema3d)')
-    # parser.add_argument('--ver_batch', default=0, type=int, help='Batch size for reading large files')
     parser.add_argument('--output_type', default='gre', help='which cloud to output: g = ground truth, r = prediction result , e = error')
     args = parser.parse_args()
     return args

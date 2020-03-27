@@ -64,7 +64,7 @@ Procedure to install all the dependencies:
 conda create --name <name_of_your_env> python=3.6
 conda activate <name_of_your_env>
 conda install pytorch -c pytorch
-conda install scikit-learn tqdm h5py cython
+conda install scikit-learn tqdm h5py cython pyyaml
 conda install -c conda-forge laspy
 pip install plyfile
 ```

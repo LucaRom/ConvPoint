@@ -6,7 +6,6 @@ import warnings
 sys.path.append('/wspace/disk01/lidar/convpoint_test/ConvPoint/convpoint')
 
 import argparse
-import os
 import numpy as np
 from datetime import datetime
 from tqdm import tqdm
@@ -18,8 +17,9 @@ import torch.utils.data
 import torch.nn.functional as F
 import convpoint.knn.lib.python.nearest_neighbors as nearest_neighbors
 import utils.metrics as metrics
-from examples.airborne_lidar.airborne_lidar_utils import get_airborne_lidar_info, InformationLogger, print_metric, write_config
+from examples.airborne_lidar.airborne_lidar_utils import InformationLogger, print_metric, write_config
 import h5py
+from pathlib import Path
 
 
 def parse_args():
@@ -130,7 +130,7 @@ class PartDatasetTrainVal():
     def __init__(self, filelist, folder, training, block_size, npoints, iteration_number, features, coi):
 
         self.filelist = filelist
-        self.folder = folder
+        self.folder = Path(folder)
         self.training = training
         self.bs = block_size
         self.npoints = npoints
@@ -143,7 +143,7 @@ class PartDatasetTrainVal():
         # Load data
         index = random.randint(0, len(self.filelist) - 1)
         dataset = self.filelist[index]
-        data_file = h5py.File(os.path.join(self.folder, dataset), 'r')
+        data_file = h5py.File(self.folder / dataset, 'r')
 
         # Get the features
         xyzni = data_file["xyzni"][:]
@@ -211,14 +211,14 @@ class PartDatasetTest():
     def __init__(self, filename, folder, block_size=8, npoints=8192, test_step=5, features=False, labels=True):
 
         self.filename = filename
-        self.folder = folder
+        self.folder = Path(folder)
         self.bs = block_size
         self.npoints = npoints
         self.features = features
         self.step = test_step
 
         # load the points
-        data_file = h5py.File(os.path.join(self.folder, filename), 'r')
+        data_file = h5py.File(self.folder / filename, 'r')
         self.xyzni = data_file["xyzni"][:]
         if labels:
             self.labels = data_file["labels"][:]
@@ -304,8 +304,8 @@ def train(args, dataset_dict):
     # create the root folder
     print("Creating results folder...", end="")
     time_string = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
-    root_folder = os.path.join(args.savedir, f"{args.model}_{args.npoints}_drop{args.drop}_{time_string}")
-    os.makedirs(root_folder, exist_ok=True)
+    root_folder = Path(args.savedir / f"{args.model}_{args.npoints}_drop{args.drop}_{time_string}")
+    root_folder.mkdir(exist_ok=True)
     args_dict = vars(args)
     args_dict['data'] = dataset_dict
     write_config(root_folder, args_dict)
@@ -389,7 +389,7 @@ def train(args, dataset_dict):
         fscore_val = metrics.stats_f1score_per_class(cm_val)
 
         # save the model
-        torch.save(net.state_dict(), os.path.join(root_folder, "state_dict.pth"))
+        torch.save(net.state_dict(), root_folder / "state_dict.pth")
 
         # write the logs
         val_metrics_values = {'loss': f"{val_loss / cm_val.sum():.4e}", 'acc': acc_val[0], 'iou': iou_val[0], 'fscore': fscore_val[0]}
@@ -408,8 +408,7 @@ def test(args, flist_test, model_folder):
     # create the network
     print("Creating network...")
     net, features = get_model(nb_classes, args)
-
-    net.load_state_dict(torch.load(os.path.join(model_folder, "state_dict.pth")))
+    net.load_state_dict(torch.load(model_folder / "state_dict.pth"))
     net.cuda()
     net.eval()
     print(f"Number of parameters in the model: {count_parameters(net):,}")
@@ -474,39 +473,37 @@ def test(args, flist_test, model_folder):
             tst_logs.add_metric_values(tst_avg_score, -1)
             tst_logs.add_class_scores(tst_class_score, -1)
 
-        os.makedirs(os.path.join(model_folder, filename), exist_ok=True)
-
-        # saving labels
-        save_fname = os.path.join(model_folder, filename, "pred.txt")
+        # Save predictions
+        out_folder = model_folder / filename
+        out_folder.mkdir(exist_ok=True)
+        save_fname = out_folder / "pred.txt"
         np.savetxt(save_fname, scores, fmt='%d')
-
         if args.savepts:
-            save_fname = os.path.join(model_folder, filename, "pts.txt")
+            save_fname = out_folder / "pts.txt"
             xyzni = np.concatenate([xyz, np.expand_dims(scores, 1)], axis=1)
             np.savetxt(save_fname, xyzni, fmt=['%.4f', '%.4f', '%.4f', '%d'])
 
 
 def main():
-
     args = parse_args()
 
     # create the file lists (trn / val / tst)
     print("Create file list...")
-    base_dir = args.rootdir
-
+    base_dir = Path(args.rootdir)
     dataset_dict = {'trn': [], 'val': [], 'tst': []}
 
     for dataset in dataset_dict.keys():
-        for f in os.listdir(os.path.join(base_dir, dataset)):
-            dataset_dict[dataset].append(f"{dataset}/{f}")
+        for file in (base_dir / dataset).glob('*.hdfs'):
+            dataset_dict[dataset].append(f"{dataset}/{file.stem}")
 
         if len(dataset_dict[dataset]) == 0:
-            warnings.warn(f"{os.path.join(base_dir, dataset)} is empty")
+            warnings.warn(f"{base_dir / dataset} is empty")
 
     print(f"Las files per dataset:\n Trn: {len(dataset_dict['trn'])} \n Val: {len(dataset_dict['val'])} \n Tst: {len(dataset_dict['tst'])}")
 
+    # Train + Validate model
     model_folder = train(args, dataset_dict)
-
+    # Test model
     if args.test:
         test(args, dataset_dict['tst'], model_folder)
 

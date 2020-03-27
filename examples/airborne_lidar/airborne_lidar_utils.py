@@ -8,16 +8,6 @@ def tsv_line(*args):
     return '\t'.join(map(str, args)) + '\n'
 
 
-def get_airborne_lidar_info():
-    obj_classes = {
-        'other': 0,
-        'building': 1,
-        'water': 2,
-        'ground': 3}
-
-    return obj_classes
-
-
 def write_features(file_name, xyzni, labels):
     """write the geometric features, labels and clouds in a h5 file"""
     if os.path.isfile(file_name):
@@ -38,7 +28,7 @@ class InformationLogger(object):
         # Dicts of logs
         def open_log(metric_name, fmt_str="metric_{}_{}.log"):
             filename = fmt_str.format(mode, metric_name)
-            return open(os.path.join(log_folder, filename), "a", buffering=1)
+            return open(log_folder / filename, "a", buffering=1)
 
         self.metric_values = {m: open_log(m) for m in self.metrics}
         self.class_scores = {m: open_log(m, fmt_str="metric_classwise_{}_{}.log") for m in self.metrics_classwise}
@@ -68,5 +58,5 @@ def print_metric(mode, metric, values):
 
 
 def write_config(folder, args):
-    with open(os.path.join(folder, 'config.yaml'), 'w') as outfile:
+    with open(folder / 'config.yaml', 'w') as outfile:
         yaml.dump(args, outfile, default_flow_style=False)
