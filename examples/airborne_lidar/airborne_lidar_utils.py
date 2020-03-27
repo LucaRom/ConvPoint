@@ -64,8 +64,7 @@ class InformationLogger(object):
 
 
 def print_metric(mode, metric, values):
-    print(f"\n{mode} {metric}:\n  Overall: {values[0]:.3f}\n  Other: {values[1][0]:.3f}\n  Building: {values[1][1]:.3f}\n  "
-          f"Water: {values[1][2]:.3f}\n  Ground: {values[1][3]:.3f}")
+    print(f"\n{mode} {metric}:\n  Overall: {values[0]:.3f}\n  Per class: {values[1]}")
 
 
 def write_config(folder, args):

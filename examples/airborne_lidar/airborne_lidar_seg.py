@@ -119,7 +119,9 @@ def mode_selection(class_mode):
         coi = {'6': 1, '9': 2, '2': 3, '3': 4, '4': 5, '5': 5}
     else:
         raise ValueError(f"Class formatting provided ({class_mode}) is not defined.")
-    return coi, len(coi) + 1
+
+    nb_class = np.unique([x for x in coi.values()])
+    return coi, len(nb_class) + 1
 
 
 # Part dataset only for training / validation
