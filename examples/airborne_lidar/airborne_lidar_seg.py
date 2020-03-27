@@ -403,8 +403,7 @@ def train(args, dataset_dict):
 
 
 def test(args, flist_test, model_folder):
-    obj_classes = get_airborne_lidar_info()
-    nb_classes = len(obj_classes)
+    _, nb_classes = mode_selection(args.mode)
 
     # create the network
     print("Creating network...")
