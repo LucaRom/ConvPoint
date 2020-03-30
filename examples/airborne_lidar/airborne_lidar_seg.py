@@ -31,19 +31,19 @@ def parse_args():
     parser.add_argument("--batchsize", "-b", default=10, type=int)
     parser.add_argument("--npoints", default=8168, type=int, help="Number of points to be sampled in the block.")
     parser.add_argument("--blocksize", default=50, type=int, help="Size of the infinite vertical column, to be processed.")
-    parser.add_argument("--iter", default=100, type=int)
+    parser.add_argument("--iter", default=1, type=int)
     parser.add_argument("--num_workers", default=8, type=int)
     parser.add_argument("--features", default="xyzni", type=str, help="Features to process. xyzni means xyz + number of returns + intensity. "
                                                                       "Currently, only xyz and xyzni are supported for this dataset.")
     parser.add_argument("--test_step", default=15, type=float)
     parser.add_argument("--test_labels", default=True, type=bool, help="Labels available for test dataset")
-    parser.add_argument("--val_iter", default=100, type=int, help="Number of iterations at validation.")
+    parser.add_argument("--val_iter", default=1, type=int, help="Number of iterations at validation.")
     parser.add_argument("--nepochs", default=1, type=int)
     parser.add_argument("--model", default="SegBig", type=str, help="SegBig is the only available model at this time, for this dataset.")
     parser.add_argument("--drop", default=0, type=float)
 
     parser.add_argument("--lr", default=1e-3, help="Learning rate")
-    parser.add_argument("--mode", default=1, type=int, help="Class mode. Currently 2 choices available. "
+    parser.add_argument("--mode", default=2, type=int, help="Class mode. Currently 2 choices available. "
                                                             "1: building, water, ground."
                                                             "2: building, water, ground, low vegetation and medium + high vegetation")
     args = parser.parse_args()
@@ -103,25 +103,25 @@ def rotate_point_cloud_z(batch_data):
     return np.dot(batch_data, rotation_matrix)
 
 
-def mode_selection(class_mode):
-    """
-    # Dict containing the mapping of input (from the .las file) and the output classes (for the training step).
-    # 6: Building
-    # 9: water
-    # 2: ground
-    # 3: low vegetation
-    # 4: medium vegetation
-    # 5: high vegetation
-    """
-    if class_mode == 1:
-        coi = {'6': 1, '9': 2, '2': 3}
-    elif class_mode == 2:
-        coi = {'6': 1, '9': 2, '2': 3, '3': 4, '4': 5, '5': 5}
-    else:
-        raise ValueError(f"Class formatting provided ({class_mode}) is not defined.")
+class ClassMode(object):
+    def __init__(self, mode):
+        """
+        # Dict containing the mapping of input (from the .las file) and the output classes (for the training step).
+        # 6: Building
+        # 9: water
+        # 2: ground
+        # 3: low vegetation
+        # 4: medium vegetation
+        # 5: high vegetation
+        """
+        if mode == 1:
+            self.coi = {'6': 1, '9': 2, '2': 3}
+        elif mode == 2:
+            self.coi = {'6': 1, '9': 2, '2': 3, '3': 4, '4': 5, '5': 5}
+        else:
+            raise ValueError(f"Class formatting provided ({mode}) is not defined.")
 
-    nb_class = np.unique([x for x in coi.values()])
-    return coi, len(nb_class) + 1
+        self.nb_class = len(np.unique([x for x in self.coi.values()])) + 1
 
 
 # Part dataset only for training / validation
@@ -143,7 +143,7 @@ class PartDatasetTrainVal():
         # Load data
         index = random.randint(0, len(self.filelist) - 1)
         dataset = self.filelist[index]
-        data_file = h5py.File(self.folder / dataset, 'r')
+        data_file = h5py.File(self.folder / f"{dataset}.hdfs", 'r')
 
         # Get the features
         xyzni = data_file["xyzni"][:]
@@ -218,7 +218,7 @@ class PartDatasetTest():
         self.step = test_step
 
         # load the points
-        data_file = h5py.File(self.folder / filename, 'r')
+        data_file = h5py.File(self.folder / f"{filename}.hdfs", 'r')
         self.xyzni = data_file["xyzni"][:]
         if labels:
             self.labels = data_file["labels"][:]
@@ -281,21 +281,20 @@ def get_model(nb_classes, args):
     return Net(input_channels, output_channels=nb_classes, args=args), features
 
 
-def train(args, dataset_dict):
-    coi, nb_classes = mode_selection(args.mode)
+def train(args, dataset_dict, info_class):
 
     print("Creating network...")
-    net, features = get_model(nb_classes, args)
+    net, features = get_model(info_class.nb_class, args)
     net.cuda()
     print(f"Number of parameters in the model: {count_parameters(net):,}")
 
     print("Creating dataloader and optimizer...", end="")
     ds_trn = PartDatasetTrainVal(filelist=dataset_dict['trn'], folder=args.rootdir, training=True, block_size=args.blocksize,
-                                 npoints=args.npoints, iteration_number=args.batchsize * args.iter, features=features, coi=coi)
+                                 npoints=args.npoints, iteration_number=args.batchsize * args.iter, features=features, coi=info_class.coi)
     train_loader = torch.utils.data.DataLoader(ds_trn, batch_size=args.batchsize, shuffle=True, num_workers=args.num_workers)
 
     ds_val = PartDatasetTrainVal(filelist=dataset_dict['val'], folder=args.rootdir, training=False, block_size=args.blocksize,
-                                 npoints=args.npoints, iteration_number=args.batchsize * args.val_iter, features=features, coi=coi)
+                                 npoints=args.npoints, iteration_number=args.batchsize * args.val_iter, features=features, coi=info_class.coi)
     val_loader = torch.utils.data.DataLoader(ds_val, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
 
     optimizer = torch.optim.Adam(net.parameters(), lr=float(args.lr))
@@ -304,7 +303,7 @@ def train(args, dataset_dict):
     # create the root folder
     print("Creating results folder...", end="")
     time_string = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
-    root_folder = Path(args.savedir / f"{args.model}_{args.npoints}_drop{args.drop}_{time_string}")
+    root_folder = Path(f"{args.savedir}/{args.model}_{args.npoints}_drop{args.drop}_{time_string}")
     root_folder.mkdir(exist_ok=True)
     args_dict = vars(args)
     args_dict['data'] = dataset_dict
@@ -323,7 +322,7 @@ def train(args, dataset_dict):
         net.train()
 
         train_loss = 0
-        cm = np.zeros((nb_classes, nb_classes))
+        cm = np.zeros((info_class.nb_class, info_class.nb_class))
         t = tqdm(train_loader, ncols=150, desc="Epoch {}".format(epoch))
         for pts, features, seg in t:
             features = features.cuda()
@@ -332,14 +331,14 @@ def train(args, dataset_dict):
 
             optimizer.zero_grad()
             outputs = net(features, pts)
-            loss = F.cross_entropy(outputs.view(-1, nb_classes), seg.view(-1))
+            loss = F.cross_entropy(outputs.view(-1, info_class.nb_class), seg.view(-1))
             loss.backward()
             optimizer.step()
 
             output_np = np.argmax(outputs.cpu().detach().numpy(), axis=2).copy()
             target_np = seg.cpu().numpy().copy()
 
-            cm_ = confusion_matrix(target_np.ravel(), output_np.ravel(), labels=list(range(nb_classes)))
+            cm_ = confusion_matrix(target_np.ravel(), output_np.ravel(), labels=list(range(info_class.nb_class)))
             cm += cm_
 
             oa = f"{metrics.stats_overall_accuracy(cm):.4f}"
@@ -359,7 +358,7 @@ def train(args, dataset_dict):
         ######
         # validation
         net.eval()
-        cm_val = np.zeros((nb_classes, nb_classes))
+        cm_val = np.zeros((info_class.nb_class, info_class.nb_class))
         val_loss = 0
         t = tqdm(val_loader, ncols=150, desc="  Validation epoch {}".format(epoch))
         with torch.no_grad():
@@ -369,12 +368,12 @@ def train(args, dataset_dict):
                 seg = seg.cuda()
 
                 outputs = net(features, pts)
-                loss = F.cross_entropy(outputs.view(-1, nb_classes), seg.view(-1))
+                loss = F.cross_entropy(outputs.view(-1, info_class.nb_class), seg.view(-1))
 
                 output_np = np.argmax(outputs.cpu().detach().numpy(), axis=2).copy()
                 target_np = seg.cpu().numpy().copy()
 
-                cm_ = confusion_matrix(target_np.ravel(), output_np.ravel(), labels=list(range(nb_classes)))
+                cm_ = confusion_matrix(target_np.ravel(), output_np.ravel(), labels=list(range(info_class.nb_class)))
                 cm_val += cm_
 
                 oa_val = f"{metrics.stats_overall_accuracy(cm_val):.4f}"
@@ -402,12 +401,11 @@ def train(args, dataset_dict):
     return root_folder
 
 
-def test(args, flist_test, model_folder):
-    _, nb_classes = mode_selection(args.mode)
+def test(args, flist_test, model_folder, info_class):
 
     # create the network
     print("Creating network...")
-    net, features = get_model(nb_classes, args)
+    net, features = get_model(info_class.nb_class, args)
     net.load_state_dict(torch.load(model_folder / "state_dict.pth"))
     net.cuda()
     net.eval()
@@ -420,7 +418,7 @@ def test(args, flist_test, model_folder):
         tst_loader = torch.utils.data.DataLoader(ds_tst, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
 
         xyz = ds_tst.xyzni[:, :3]
-        scores = np.zeros((xyz.shape[0], nb_classes))
+        scores = np.zeros((xyz.shape[0], info_class.nb_class))
 
         total_time = 0
         iter_nb = 0
@@ -433,7 +431,7 @@ def test(args, flist_test, model_folder):
                 outputs = net(features, pts)
                 t2 = time.time()
 
-                outputs_np = outputs.cpu().numpy().reshape((-1, nb_classes))
+                outputs_np = outputs.cpu().numpy().reshape((-1, info_class.nb_class))
                 scores[indices.cpu().numpy().ravel()] += outputs_np
 
                 iter_nb += 1
@@ -458,7 +456,7 @@ def test(args, flist_test, model_folder):
             tst_logs = InformationLogger(model_folder, 'tst')
             lbl = ds_tst.labels[:, :]
 
-            cm = confusion_matrix(lbl.ravel(), scores.ravel(), labels=list(range(nb_classes)))
+            cm = confusion_matrix(lbl.ravel(), scores.ravel(), labels=list(range(info_class.nb_class)))
 
             cl_acc = metrics.stats_accuracy_per_class(cm)
             cl_iou = metrics.stats_iou_per_class(cm)
@@ -501,11 +499,12 @@ def main():
 
     print(f"Las files per dataset:\n Trn: {len(dataset_dict['trn'])} \n Val: {len(dataset_dict['val'])} \n Tst: {len(dataset_dict['tst'])}")
 
+    info_class = ClassMode(args.mode)
     # Train + Validate model
-    model_folder = train(args, dataset_dict)
+    model_folder = train(args, dataset_dict, info_class)
     # Test model
     if args.test:
-        test(args, dataset_dict['tst'], model_folder)
+        test(args, dataset_dict['tst'], model_folder, info_class)
 
 
 if __name__ == '__main__':
