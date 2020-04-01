@@ -103,31 +103,50 @@ def rotate_point_cloud_z(batch_data):
     return np.dot(batch_data, rotation_matrix)
 
 
-class ClassMode(object):
-    def __init__(self, mode):
-        """
-        # Dict containing the mapping of input (from the .las file) and the output classes (for the training step).
-        # 6: Building
-        # 9: water
-        # 2: ground
-        # 3: low vegetation
-        # 4: medium vegetation
-        # 5: high vegetation
-        """
-        if mode == 1:
-            self.coi = {'6': 1, '9': 2, '2': 3}
-        elif mode == 2:
-            self.coi = {'6': 1, '9': 2, '2': 3, '3': 4, '4': 5, '5': 5}
-        else:
-            raise ValueError(f"Class formatting provided ({mode}) is not defined.")
+# class ClassMode(object):
+def class_mode(mode):
+    """
+    # Dict containing the mapping of input (from the .las file) and the output classes (for the training step).
+    """
+    asprs_class_def = {'2': {'name': 'Ground', 'color': [233, 233, 229], 'mode': 0},  # light grey
+                       '3': {'name': 'Low vegetation', 'color': [77, 174, 84], 'mode': 0},  # bright green
+                       '4': {'name': 'Medium vegetation', 'color': [81, 163, 148], 'mode': 0},  # bluegreen
+                       '5': {'name': 'High Vegetation', 'color': [108, 135, 75], 'mode': 0},  # dark green
+                       '6': {'name': 'Building', 'color': [223, 52, 52], 'mode': 0},  # red
+                       '9': {'name': 'Water', 'color': [95, 156, 196], 'mode': 0}  # blue
+                       }
+    coi = {}
+    unique_class = []
+    if mode == 1:
+        asprs_class_to_use = {'6': 1, '9': 2, '2': 3}
 
-        self.nb_class = len(np.unique([x for x in self.coi.values()])) + 1
+    elif mode == 2:
+        asprs_class_to_use = {'6': 1, '9': 2, '2': 3, '3': 4, '4': 5, '5': 5}
+
+    else:
+        raise ValueError(f"Class mode provided ({mode}) is not defined.")
+
+    for key, value in asprs_class_def.items():
+        if key in asprs_class_to_use.keys():
+            coi[key] = value
+            coi[key]['mode'] = asprs_class_to_use[key]
+            if asprs_class_to_use[key] not in unique_class:
+                unique_class.append(asprs_class_to_use[key])
+
+    nb_class = len(unique_class) + 1
+    return {'class_info': coi, 'nb_class': nb_class}
+
+    # def pred_to_asprs(self, pred):
+    #     """Converts predicted values (0->n) to the corresponding ASPRS class and returns its name."""
+    #     labels2 = np.full(shape=pred.shape, fill_value=0, dtype=int)
+    #     for key, value in self.coi.items():
+    #         labels2[pred == value] = int(key)
 
 
 # Part dataset only for training / validation
 class PartDatasetTrainVal():
 
-    def __init__(self, filelist, folder, training, block_size, npoints, iteration_number, features, coi):
+    def __init__(self, filelist, folder, training, block_size, npoints, iteration_number, features, class_info):
 
         self.filelist = filelist
         self.folder = Path(folder)
@@ -136,7 +155,7 @@ class PartDatasetTrainVal():
         self.npoints = npoints
         self.iterations = iteration_number
         self.features = features
-        self.coi = coi
+        self.class_info = class_info
 
     def __getitem__(self, index):
 
@@ -192,8 +211,8 @@ class PartDatasetTrainVal():
         Labels with keys not defined in the coi dict will be set to 0.
         """
         labels2 = np.full(shape=labels.shape, fill_value=0, dtype=int)
-        for key, value in self.coi.items():
-            labels2[labels == int(key)] = value
+        for key, value in self.class_info.items():
+            labels2[labels == int(key)] = value['mode']
 
         return labels2
 
@@ -283,18 +302,21 @@ def get_model(nb_classes, args):
 
 def train(args, dataset_dict, info_class):
 
+    nb_class = info_class['nb_class']
     print("Creating network...")
-    net, features = get_model(info_class.nb_class, args)
+    net, features = get_model(nb_class, args)
     net.cuda()
     print(f"Number of parameters in the model: {count_parameters(net):,}")
 
     print("Creating dataloader and optimizer...", end="")
     ds_trn = PartDatasetTrainVal(filelist=dataset_dict['trn'], folder=args.rootdir, training=True, block_size=args.blocksize,
-                                 npoints=args.npoints, iteration_number=args.batchsize * args.iter, features=features, coi=info_class.coi)
+                                 npoints=args.npoints, iteration_number=args.batchsize * args.iter, features=features,
+                                 class_info=info_class['class_info'])
     train_loader = torch.utils.data.DataLoader(ds_trn, batch_size=args.batchsize, shuffle=True, num_workers=args.num_workers)
 
     ds_val = PartDatasetTrainVal(filelist=dataset_dict['val'], folder=args.rootdir, training=False, block_size=args.blocksize,
-                                 npoints=args.npoints, iteration_number=args.batchsize * args.val_iter, features=features, coi=info_class.coi)
+                                 npoints=args.npoints, iteration_number=args.batchsize * args.val_iter, features=features,
+                                 class_info=info_class['class_info'])
     val_loader = torch.utils.data.DataLoader(ds_val, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
 
     optimizer = torch.optim.Adam(net.parameters(), lr=float(args.lr))
@@ -322,7 +344,7 @@ def train(args, dataset_dict, info_class):
         net.train()
 
         train_loss = 0
-        cm = np.zeros((info_class.nb_class, info_class.nb_class))
+        cm = np.zeros((nb_class, nb_class))
         t = tqdm(train_loader, ncols=150, desc="Epoch {}".format(epoch))
         for pts, features, seg in t:
             features = features.cuda()
@@ -331,14 +353,14 @@ def train(args, dataset_dict, info_class):
 
             optimizer.zero_grad()
             outputs = net(features, pts)
-            loss = F.cross_entropy(outputs.view(-1, info_class.nb_class), seg.view(-1))
+            loss = F.cross_entropy(outputs.view(-1, nb_class), seg.view(-1))
             loss.backward()
             optimizer.step()
 
             output_np = np.argmax(outputs.cpu().detach().numpy(), axis=2).copy()
             target_np = seg.cpu().numpy().copy()
 
-            cm_ = confusion_matrix(target_np.ravel(), output_np.ravel(), labels=list(range(info_class.nb_class)))
+            cm_ = confusion_matrix(target_np.ravel(), output_np.ravel(), labels=list(range(nb_class)))
             cm += cm_
 
             oa = f"{metrics.stats_overall_accuracy(cm):.4f}"
@@ -358,7 +380,7 @@ def train(args, dataset_dict, info_class):
         ######
         # validation
         net.eval()
-        cm_val = np.zeros((info_class.nb_class, info_class.nb_class))
+        cm_val = np.zeros((nb_class, nb_class))
         val_loss = 0
         t = tqdm(val_loader, ncols=150, desc="  Validation epoch {}".format(epoch))
         with torch.no_grad():
@@ -368,12 +390,12 @@ def train(args, dataset_dict, info_class):
                 seg = seg.cuda()
 
                 outputs = net(features, pts)
-                loss = F.cross_entropy(outputs.view(-1, info_class.nb_class), seg.view(-1))
+                loss = F.cross_entropy(outputs.view(-1, nb_class), seg.view(-1))
 
                 output_np = np.argmax(outputs.cpu().detach().numpy(), axis=2).copy()
                 target_np = seg.cpu().numpy().copy()
 
-                cm_ = confusion_matrix(target_np.ravel(), output_np.ravel(), labels=list(range(info_class.nb_class)))
+                cm_ = confusion_matrix(target_np.ravel(), output_np.ravel(), labels=list(range(nb_class)))
                 cm_val += cm_
 
                 oa_val = f"{metrics.stats_overall_accuracy(cm_val):.4f}"
@@ -402,10 +424,10 @@ def train(args, dataset_dict, info_class):
 
 
 def test(args, flist_test, model_folder, info_class):
-
+    nb_class = info_class['nb_class']
     # create the network
     print("Creating network...")
-    net, features = get_model(info_class.nb_class, args)
+    net, features = get_model(nb_class, args)
     net.load_state_dict(torch.load(model_folder / "state_dict.pth"))
     net.cuda()
     net.eval()
@@ -418,7 +440,7 @@ def test(args, flist_test, model_folder, info_class):
         tst_loader = torch.utils.data.DataLoader(ds_tst, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
 
         xyz = ds_tst.xyzni[:, :3]
-        scores = np.zeros((xyz.shape[0], info_class.nb_class))
+        scores = np.zeros((xyz.shape[0], nb_class))
 
         total_time = 0
         iter_nb = 0
@@ -431,7 +453,7 @@ def test(args, flist_test, model_folder, info_class):
                 outputs = net(features, pts)
                 t2 = time.time()
 
-                outputs_np = outputs.cpu().numpy().reshape((-1, info_class.nb_class))
+                outputs_np = outputs.cpu().numpy().reshape((-1, nb_class))
                 scores[indices.cpu().numpy().ravel()] += outputs_np
 
                 iter_nb += 1
@@ -456,7 +478,7 @@ def test(args, flist_test, model_folder, info_class):
             tst_logs = InformationLogger(model_folder, 'tst')
             lbl = ds_tst.labels[:, :]
 
-            cm = confusion_matrix(lbl.ravel(), scores.ravel(), labels=list(range(info_class.nb_class)))
+            cm = confusion_matrix(lbl.ravel(), scores.ravel(), labels=list(range(nb_class)))
 
             cl_acc = metrics.stats_accuracy_per_class(cm)
             cl_iou = metrics.stats_iou_per_class(cm)
@@ -499,7 +521,7 @@ def main():
 
     print(f"Las files per dataset:\n Trn: {len(dataset_dict['trn'])} \n Val: {len(dataset_dict['val'])} \n Tst: {len(dataset_dict['tst'])}")
 
-    info_class = ClassMode(args.mode)
+    info_class = class_mode(args.mode)
     # Train + Validate model
     model_folder = train(args, dataset_dict, info_class)
     # Test model
