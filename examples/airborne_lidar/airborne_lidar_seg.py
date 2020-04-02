@@ -20,6 +20,7 @@ import utils.metrics as metrics
 from examples.airborne_lidar.airborne_lidar_utils import InformationLogger, print_metric, write_config
 import h5py
 from pathlib import Path
+from examples.airborne_lidar.airborne_lidar_viz import prediction2ply, error2ply
 
 
 def parse_args():
@@ -35,7 +36,7 @@ def parse_args():
     parser.add_argument("--num_workers", default=8, type=int)
     parser.add_argument("--features", default="xyzni", type=str, help="Features to process. xyzni means xyz + number of returns + intensity. "
                                                                       "Currently, only xyz and xyzni are supported for this dataset.")
-    parser.add_argument("--test_step", default=15, type=float)
+    parser.add_argument("--test_step", default=50, type=float)
     parser.add_argument("--test_labels", default=True, type=bool, help="Labels available for test dataset")
     parser.add_argument("--val_iter", default=1, type=int, help="Number of iterations at validation.")
     parser.add_argument("--nepochs", default=1, type=int)
@@ -103,7 +104,6 @@ def rotate_point_cloud_z(batch_data):
     return np.dot(batch_data, rotation_matrix)
 
 
-# class ClassMode(object):
 def class_mode(mode):
     """
     # Dict containing the mapping of input (from the .las file) and the output classes (for the training step).
@@ -493,15 +493,14 @@ def test(args, flist_test, model_folder, info_class):
             tst_logs.add_metric_values(tst_avg_score, -1)
             tst_logs.add_class_scores(tst_class_score, -1)
 
-        # Save predictions
-        out_folder = model_folder / filename
-        out_folder.mkdir(exist_ok=True)
-        save_fname = out_folder / "pred.txt"
-        np.savetxt(save_fname, scores, fmt='%d')
+            # write error file.
+            # error2ply(model_folder / f"{filename}_error.ply", xyz=xyz, labels=lbl, prediction=scores, info_class=info_class['class_info'])
+
         if args.savepts:
-            save_fname = out_folder / "pts.txt"
-            xyzni = np.concatenate([xyz, np.expand_dims(scores, 1)], axis=1)
-            np.savetxt(save_fname, xyzni, fmt=['%.4f', '%.4f', '%.4f', '%d'])
+            # Save predictions
+            out_folder = model_folder / 'tst'
+            out_folder.mkdir(exist_ok=True)
+            prediction2ply(model_folder / f"{filename}_predictions.ply", xyz=xyz, prediction=scores, info_class=info_class['class_info'])
 
 
 def main():
