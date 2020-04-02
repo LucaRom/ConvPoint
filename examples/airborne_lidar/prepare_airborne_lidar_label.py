@@ -3,12 +3,23 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import os
 import numpy as np
 import argparse
 import warnings
 import laspy
-from examples.airborne_lidar.airborne_lidar_utils import write_features
+from pathlib import Path
+from airborne_lidar_utils import write_features
+
+
+def parse_args():
+    """
+    Parse arguments.
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--folder', '-f', default='/export/sata01/wspace/lidar/POINTCLOUD/data/', help='Path to data folder')
+    parser.add_argument("--dest", '-d', default='/export/sata01/wspace/lidar/convpoint_tests/prepared', help='Path to destination folder')
+    args = parser.parse_args()
+    return args
 
 
 def read_las_format(raw_path, normalize=True):
@@ -38,43 +49,31 @@ def read_las_format(raw_path, normalize=True):
     return xyzni, labels, n_points
 
 
-def parse_args():
-    """
-    Parse arguments.
-    """
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--folder', '-f', default='/export/sata01/wspace/lidar/POINTCLOUD/data/', help='Path to data folder')
-    parser.add_argument("--dest", '-d', default='/export/sata01/wspace/lidar/convpoint_tests/prepared', help='Path to destination folder')
-    args = parser.parse_args()
-    return args
-
-
 def main():
     args = parse_args()
-    base_dir = args.folder
+    base_dir = Path(args.folder)
 
     dataset_dict = {'trn': [], 'val': [], 'tst': []}
 
+    # List .las files in each dataset.
     for dataset in dataset_dict.keys():
-        for f in os.listdir(os.path.join(base_dir, dataset)):
-            if f.endswith('.las'):
-                dataset_dict[dataset].append(f)
-
+        for file in (base_dir / dataset).glob('*.las'):
+            dataset_dict[dataset].append(file.name)
         if len(dataset_dict[dataset]) == 0:
-            warnings.warn(f"{os.path.join(base_dir, dataset)} is empty")
+            warnings.warn(f"{base_dir / dataset} is empty")
 
     print(f"Las files per dataset:\n Trn: {len(dataset_dict['trn'])} \n Val: {len(dataset_dict['val'])} \n Tst: {len(dataset_dict['tst'])}")
 
-    for dst in dataset_dict:
-        for elem in dataset_dict[dst]:
+    # Write new hdfs of XYZ + number of return + intensity, with labels.
+    for dst, values in dataset_dict.items():
+        for elem in values:
             # make store directories
-            path_prepare_label = os.path.join(args.dest, dst)
-            if not os.path.exists(path_prepare_label):
-                os.makedirs(path_prepare_label)
+            path_prepare_label = Path(args.dest, dst)
+            path_prepare_label.mkdir(exist_ok=True)
 
-            xyzni, label, nb_pts = read_las_format(os.path.join(base_dir, dst, elem))
+            xyzni, label, nb_pts = read_las_format(base_dir / dst / elem)
 
-            write_features(f"{path_prepare_label}/{elem.split('.')[0]}_prepared.hdfs", xyzni=xyzni, labels=label)
+            write_features(f"{path_prepare_label / elem.split('.')[0]}_prepared.hdfs", xyzni=xyzni, labels=label)
             print(f"File {dst}/{elem} prepared. {nb_pts:,} points written.")
 
 
