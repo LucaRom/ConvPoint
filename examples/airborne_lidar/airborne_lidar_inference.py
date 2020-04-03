@@ -13,11 +13,12 @@ import convpoint.knn.lib.python.nearest_neighbors as nearest_neighbors
 import h5py
 from pathlib import Path
 from examples.airborne_lidar.airborne_lidar_viz import prediction2ply
+import laspy
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--modeldir", default='/wspace/disk01/lidar/convpoint_tests/results', type=str)
+    parser.add_argument("--modeldir", default='/wspace/disk01/lidar/convpoint_tests/results/SegBig_8168_drop0_2020-04-01-16-32-17/', type=str)
     parser.add_argument("--rootdir", default='/wspace/disk01/lidar/convpoint_tests/prepared', type=str)
     parser.add_argument("--batchsize", "-b", default=10, type=int)
     parser.add_argument("--npoints", default=8168, type=int, help="Number of points to be sampled in the block.")
@@ -68,6 +69,33 @@ def nearest_correspondance(pts_src, pts_dest, data_src, K=1):
     else:
         data_dest = data_src[indices].mean(1)
     return data_dest
+
+
+def read_las_format(raw_path):
+    """Extract data from a .las file.
+    Will normalize XYZ and intensity between 0 and 1.
+    """
+
+    in_file = laspy.file.File(raw_path, mode='r')
+    n_points = len(in_file)
+    x = np.reshape(in_file.x, (n_points, 1))
+    y = np.reshape(in_file.y, (n_points, 1))
+    z = np.reshape(in_file.z, (n_points, 1))
+    intensity = np.reshape(in_file.intensity, (n_points, 1))
+    nb_return = np.reshape(in_file.num_returns, (n_points, 1))
+
+    # Converting data to relative xyz reference system.
+    min_x = np.min(x)
+    min_y = np.min(y)
+    min_z = np.min(z)
+    norm_x = x - min_x
+    norm_y = y - min_y
+    norm_z = z - min_z
+    # Intensity is normalized based on min max values.
+    norm_intensity = (intensity - np.min(intensity)) / (np.max(intensity) - np.min(intensity))
+    xyzni = np.hstack((norm_x, norm_y, norm_z, nb_return, norm_intensity)).astype(np.float16)
+
+    return xyzni, n_points, {'min_x': min_x, 'min_y': min_y, 'min_z': min_z}
 
 
 def class_mode(mode):
@@ -256,7 +284,7 @@ def main():
     print(f"Las files in tst dataset: {len(dataset_dict['tst'])}")
 
     info_class = class_mode(args.mode)
-    model_folder = args.modeldir
+    model_folder = Path(args.modeldir)
     test(args, dataset_dict['tst'], model_folder, info_class)
 
 
