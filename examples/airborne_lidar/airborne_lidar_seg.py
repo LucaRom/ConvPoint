@@ -106,7 +106,7 @@ def rotate_point_cloud_z(batch_data):
 
 def class_mode(mode):
     """
-    # Dict containing the mapping of input (from the .las file) and the output classes (for the training step).
+    Dict containing the mapping of input (from the .las file) and the output classes (for the training step).
     """
     asprs_class_def = {'2': {'name': 'Ground', 'color': [233, 233, 229], 'mode': 0},  # light grey
                        '3': {'name': 'Low vegetation', 'color': [77, 174, 84], 'mode': 0},  # bright green
@@ -135,12 +135,6 @@ def class_mode(mode):
 
     nb_class = len(unique_class) + 1
     return {'class_info': coi, 'nb_class': nb_class}
-
-    # def pred_to_asprs(self, pred):
-    #     """Converts predicted values (0->n) to the corresponding ASPRS class and returns its name."""
-    #     labels2 = np.full(shape=pred.shape, fill_value=0, dtype=int)
-    #     for key, value in self.coi.items():
-    #         labels2[pred == value] = int(key)
 
 
 # Part dataset only for training / validation

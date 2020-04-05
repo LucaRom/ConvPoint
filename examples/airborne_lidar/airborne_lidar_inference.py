@@ -9,66 +9,33 @@ from tqdm import tqdm
 import time
 import torch
 import torch.utils.data
-import convpoint.knn.lib.python.nearest_neighbors as nearest_neighbors
-import h5py
 from pathlib import Path
-from examples.airborne_lidar.airborne_lidar_viz import prediction2ply
+from examples.airborne_lidar.airborne_lidar_seg import get_model, nearest_correspondance, count_parameters, class_mode
 import laspy
+import yaml
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--modeldir", default='/wspace/disk01/lidar/convpoint_tests/results/SegBig_8168_drop0_2020-04-01-16-32-17/', type=str)
-    parser.add_argument("--rootdir", default='/wspace/disk01/lidar/convpoint_tests/prepared', type=str)
-    parser.add_argument("--batchsize", "-b", default=10, type=int)
-    parser.add_argument("--npoints", default=8168, type=int, help="Number of points to be sampled in the block.")
-    parser.add_argument("--blocksize", default=50, type=int, help="Size of the infinite vertical column, to be processed.")
-    parser.add_argument("--num_workers", default=8, type=int)
-    parser.add_argument("--features", default="xyzni", type=str, help="Features to process. xyzni means xyz + number of returns + intensity. "
-                                                                      "Currently, only xyz and xyzni are supported for this dataset.")
+    parser.add_argument("--modeldir", default='/wspace/disk01/lidar/convpoint_tests/results/HPC/SegBig_8168_drop0_2020-03-18-20-30-24/', type=str)
+    parser.add_argument("--rootdir", default='/wspace/disk01/lidar/convpoint_tests/las_file', type=str,
+                        help="Folder conntaining tst subfolder with las files.")
     parser.add_argument("--test_step", default=15, type=float)
-    parser.add_argument("--model", default="SegBig", type=str, help="SegBig is the only available model at this time, for this dataset.")
-    parser.add_argument("--mode", default=2, type=int, help="Class mode. Currently 2 choices available. "
-                                                            "1: building, water, ground."
-                                                            "2: building, water, ground, low vegetation and medium + high vegetation")
+
     args = parser.parse_args()
+    config_dict = read_config_from_yaml(Path(args.modeldir))
+    arg_dict = args.__dict__
+    for key, value in config_dict.items():
+        if key not in ['rootdir', 'test_step']:
+            arg_dict[key] = value
+
     return args
 
 
-class bcolors:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
-
-
-# wrap blue / green
-def wblue(str):
-    return bcolors.OKBLUE + str + bcolors.ENDC
-
-
-def wgreen(str):
-    return bcolors.OKGREEN + str + bcolors.ENDC
-
-
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-
-def nearest_correspondance(pts_src, pts_dest, data_src, K=1):
-    print(pts_dest.shape)
-    indices = nearest_neighbors.knn(pts_src.astype(np.float32), pts_dest.astype(np.float32), K, omp=True)
-    print(indices.shape)
-    if K == 1:
-        indices = indices.ravel()
-        data_dest = data_src[indices]
-    else:
-        data_dest = data_src[indices].mean(1)
-    return data_dest
+def read_config_from_yaml(folder):
+    with open(folder / 'config.yaml', 'r') as in_file:
+        yaml_dict = yaml.load(in_file, Loader=yaml.FullLoader)
+    return yaml_dict
 
 
 def read_las_format(raw_path):
@@ -95,40 +62,26 @@ def read_las_format(raw_path):
     norm_intensity = (intensity - np.min(intensity)) / (np.max(intensity) - np.min(intensity))
     xyzni = np.hstack((norm_x, norm_y, norm_z, nb_return, norm_intensity)).astype(np.float16)
 
-    return xyzni, n_points, {'min_x': min_x, 'min_y': min_y, 'min_z': min_z}
+    return xyzni, {'min_x': min_x, 'min_y': min_y, 'min_z': min_z}
 
 
-def class_mode(mode):
-    """
-    # Dict containing the mapping of input (from the .las file) and the output classes (for the training step).
-    """
-    asprs_class_def = {'2': {'name': 'Ground', 'color': [233, 233, 229], 'mode': 0},  # light grey
-                       '3': {'name': 'Low vegetation', 'color': [77, 174, 84], 'mode': 0},  # bright green
-                       '4': {'name': 'Medium vegetation', 'color': [81, 163, 148], 'mode': 0},  # bluegreen
-                       '5': {'name': 'High Vegetation', 'color': [108, 135, 75], 'mode': 0},  # dark green
-                       '6': {'name': 'Building', 'color': [223, 52, 52], 'mode': 0},  # red
-                       '9': {'name': 'Water', 'color': [95, 156, 196], 'mode': 0}  # blue
-                       }
-    coi = {}
-    unique_class = []
-    if mode == 1:
-        asprs_class_to_use = {'6': 1, '9': 2, '2': 3}
+def write_to_las(filename, xyz, pred, info_coord, info_class):
+    """Write xyz and ASPRS predictions to las file format. """
+    # TODO: Write CRS info with file.
+    out_file = laspy.file.File(filename, mode='w')
+    out_file.x = xyz[:, 0] + info_coord['min_x']
+    out_file.y = xyz[:, 1] + info_coord['min_y']
+    out_file.z = xyz[:, 2] + info_coord['min_z']
+    pred = pred_to_asprs(pred, info_class)
+    out_file.classification = pred
 
-    elif mode == 2:
-        asprs_class_to_use = {'6': 1, '9': 2, '2': 3, '3': 4, '4': 5, '5': 5}
 
-    else:
-        raise ValueError(f"Class mode provided ({mode}) is not defined.")
-
-    for key, value in asprs_class_def.items():
-        if key in asprs_class_to_use.keys():
-            coi[key] = value
-            coi[key]['mode'] = asprs_class_to_use[key]
-            if asprs_class_to_use[key] not in unique_class:
-                unique_class.append(asprs_class_to_use[key])
-
-    nb_class = len(unique_class) + 1
-    return {'class_info': coi, 'nb_class': nb_class}
+def pred_to_asprs(pred, info_class):
+    """Converts predicted values (0->n) to the corresponding ASPRS class."""
+    labels2 = np.full(shape=pred.shape, fill_value=0, dtype=int)
+    for key, value in info_class.items():
+        labels2[pred == value['mode']] = int(key)
+    return labels2
 
 
 # Part dataset only for testing
@@ -151,8 +104,7 @@ class PartDatasetTest():
         self.step = test_step
 
         # load the points
-        data_file = h5py.File(self.folder / f"{filename}.hdfs", 'r')
-        self.xyzni = data_file["xyzni"][:]
+        self.xyzni, self.info_coords = read_las_format(self.folder / f"{filename}.las")
 
         discretized = ((self.xyzni[:, :2]).astype(float) / self.step).astype(int)
         self.pts = np.unique(discretized, axis=0)
@@ -188,26 +140,6 @@ class PartDatasetTest():
 
     def __len__(self):
         return len(self.pts)
-
-
-def get_model(nb_classes, args):
-    # Select the model
-    if args.model == "SegBig":
-        from networks.network_seg import SegBig as Net
-    else:
-        raise NotImplemented(f"The model {args.model} does not exist. Only SegBig is available at this time.")
-
-    # Number of features as input
-    if args.features == "xyzni":
-        input_channels = 2
-        features = True
-    elif args.features == "xyz":
-        input_channels = 1
-        features = False
-    else:
-        raise NotImplemented(f"Features {args.features} are not supported. Only xyzni or xyz, at this time.")
-
-    return Net(input_channels, output_channels=nb_classes, args=args), features
 
 
 def test(args, flist_test, model_folder, info_class):
@@ -263,7 +195,8 @@ def test(args, flist_test, model_folder, info_class):
         # Save predictions
         out_folder = model_folder / 'tst'
         out_folder.mkdir(exist_ok=True)
-        prediction2ply(model_folder / f"{filename}_predictions.ply", xyz=xyz, prediction=scores, info_class=info_class['class_info'])
+        write_to_las(model_folder / f"{filename}_predictions.las", xyz=xyz, pred=scores, info_coord=ds_tst.info_coords,
+                     info_class=info_class['class_info'])
 
 
 def main():
