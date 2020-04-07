@@ -44,6 +44,7 @@ def read_las_format(raw_path):
     """
 
     in_file = laspy.file.File(raw_path, mode='r')
+    header = in_file.header
     n_points = len(in_file)
     x = np.reshape(in_file.x, (n_points, 1))
     y = np.reshape(in_file.y, (n_points, 1))
@@ -62,16 +63,16 @@ def read_las_format(raw_path):
     norm_intensity = (intensity - np.min(intensity)) / (np.max(intensity) - np.min(intensity))
     xyzni = np.hstack((norm_x, norm_y, norm_z, nb_return, norm_intensity)).astype(np.float16)
 
-    return xyzni, {'min_x': min_x, 'min_y': min_y, 'min_z': min_z}
+    return xyzni, {'min_x': min_x, 'min_y': min_y, 'min_z': min_z, 'header': header}
 
 
-def write_to_las(filename, xyz, pred, info_coord, info_class):
+def write_to_las(filename, xyz, pred, info_las_file, info_class):
     """Write xyz and ASPRS predictions to las file format. """
     # TODO: Write CRS info with file.
-    out_file = laspy.file.File(filename, mode='w')
-    out_file.x = xyz[:, 0] + info_coord['min_x']
-    out_file.y = xyz[:, 1] + info_coord['min_y']
-    out_file.z = xyz[:, 2] + info_coord['min_z']
+    out_file = laspy.file.File(filename, mode='w', header=info_las_file['header'])
+    out_file.x = xyz[:, 0] + info_las_file['min_x']
+    out_file.y = xyz[:, 1] + info_las_file['min_y']
+    out_file.z = xyz[:, 2] + info_las_file['min_z']
     pred = pred_to_asprs(pred, info_class)
     out_file.classification = pred
 
@@ -104,7 +105,7 @@ class PartDatasetTest():
         self.step = test_step
 
         # load the points
-        self.xyzni, self.info_coords = read_las_format(self.folder / f"{filename}.las")
+        self.xyzni, self.info_las_file = read_las_format(self.folder / f"{filename}.las")
 
         discretized = ((self.xyzni[:, :2]).astype(float) / self.step).astype(int)
         self.pts = np.unique(discretized, axis=0)
@@ -195,7 +196,7 @@ def test(args, flist_test, model_folder, info_class):
         # Save predictions
         out_folder = model_folder / 'tst'
         out_folder.mkdir(exist_ok=True)
-        write_to_las(model_folder / f"{filename}_predictions.las", xyz=xyz, pred=scores, info_coord=ds_tst.info_coords,
+        write_to_las(model_folder / f"{filename}_predictions.las", xyz=xyz, pred=scores, info_las_file=ds_tst.info_las_file,
                      info_class=info_class['class_info'])
 
 
@@ -208,7 +209,7 @@ def main():
     dataset_dict = {'tst': []}
 
     for dataset in dataset_dict.keys():
-        for file in (base_dir / dataset).glob('*.hdfs'):
+        for file in (base_dir / dataset).glob('*.las'):
             dataset_dict[dataset].append(f"{dataset}/{file.stem}")
 
         if len(dataset_dict[dataset]) == 0:
