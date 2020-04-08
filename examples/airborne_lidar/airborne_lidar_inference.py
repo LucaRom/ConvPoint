@@ -44,14 +44,14 @@ def read_las_format(raw_path):
     Will normalize XYZ and intensity between 0 and 1.
     """
 
-    in_file = laspy.file.File(raw_path, mode='r')
-    header = in_file.header
-    n_points = len(in_file)
-    x = np.reshape(in_file.x, (n_points, 1))
-    y = np.reshape(in_file.y, (n_points, 1))
-    z = np.reshape(in_file.z, (n_points, 1))
-    intensity = np.reshape(in_file.intensity, (n_points, 1))
-    nb_return = np.reshape(in_file.num_returns, (n_points, 1))
+    with laspy.file.File(raw_path, mode='r') as in_file:
+        header = in_file.header
+        n_points = len(in_file)
+        x = np.reshape(in_file.x, (n_points, 1))
+        y = np.reshape(in_file.y, (n_points, 1))
+        z = np.reshape(in_file.z, (n_points, 1))
+        intensity = np.reshape(in_file.intensity, (n_points, 1))
+        nb_return = np.reshape(in_file.num_returns, (n_points, 1))
 
     # Converting data to relative xyz reference system.
     min_x = np.min(x)
