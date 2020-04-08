@@ -1,7 +1,8 @@
 # add the parent folder to the python path to access convpoint library
 import sys
 import warnings
-sys.path.append('/wspace/disk01/lidar/convpoint_test/ConvPoint/convpoint')
+sys.path.append('/gpfs/fs2/nrcan/geobase/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/ConvPoint/convpoint')
+sys.path.append('/gpfs/fs2/nrcan/geobase/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/ConvPoint')
 
 import argparse
 import numpy as np
@@ -59,6 +60,9 @@ def read_las_format(raw_path):
     norm_x = x - min_x
     norm_y = y - min_y
     norm_z = z - min_z
+    # print(f"x: {min_x}  {np.max(x)}\n "
+    #       f"Y: {min_y}  {np.max(y)}\n "
+    #       f"z: {min_z}  {np.max(z)}\n ")
     # Intensity is normalized based on min max values.
     norm_intensity = (intensity - np.min(intensity)) / (np.max(intensity) - np.min(intensity))
     xyzni = np.hstack((norm_x, norm_y, norm_z, nb_return, norm_intensity)).astype(np.float16)
@@ -69,12 +73,12 @@ def read_las_format(raw_path):
 def write_to_las(filename, xyz, pred, info_las_file, info_class):
     """Write xyz and ASPRS predictions to las file format. """
     # TODO: Write CRS info with file.
-    out_file = laspy.file.File(filename, mode='w', header=info_las_file['header'])
-    out_file.x = xyz[:, 0] + info_las_file['min_x']
-    out_file.y = xyz[:, 1] + info_las_file['min_y']
-    out_file.z = xyz[:, 2] + info_las_file['min_z']
-    pred = pred_to_asprs(pred, info_class)
-    out_file.classification = pred
+    with laspy.file.File(filename, mode='w', header=info_las_file['header']) as out_file:
+        out_file.x = xyz[:, 0] + info_las_file['min_x']
+        out_file.y = xyz[:, 1] + info_las_file['min_y']
+        out_file.z = xyz[:, 2] + info_las_file['min_z']
+        pred = pred_to_asprs(pred, info_class)
+        out_file.classification = pred
 
 
 def pred_to_asprs(pred, info_class):
