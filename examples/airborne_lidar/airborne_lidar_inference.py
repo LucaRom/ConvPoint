@@ -39,19 +39,19 @@ def read_config_from_yaml(folder):
     return yaml_dict
 
 
-def read_las_format(raw_path):
+def read_las_format(in_file):
     """Extract data from a .las file.
     Will normalize XYZ and intensity between 0 and 1.
     """
 
-    with laspy.file.File(raw_path, mode='r') as in_file:
-        header = in_file.header
-        n_points = len(in_file)
-        x = np.reshape(in_file.x, (n_points, 1))
-        y = np.reshape(in_file.y, (n_points, 1))
-        z = np.reshape(in_file.z, (n_points, 1))
-        intensity = np.reshape(in_file.intensity, (n_points, 1))
-        nb_return = np.reshape(in_file.num_returns, (n_points, 1))
+    # in_file = laspy.file.File(raw_path, mode='r')
+    header = in_file.header
+    n_points = len(in_file)
+    x = np.reshape(in_file.x, (n_points, 1))
+    y = np.reshape(in_file.y, (n_points, 1))
+    z = np.reshape(in_file.z, (n_points, 1))
+    intensity = np.reshape(in_file.intensity, (n_points, 1))
+    nb_return = np.reshape(in_file.num_returns, (n_points, 1))
 
     # Converting data to relative xyz reference system.
     min_x = np.min(x)
@@ -99,17 +99,17 @@ class PartDatasetTest():
         mask = np.logical_and(mask_x, mask_y)
         return mask
 
-    def __init__(self, filename, folder, block_size=8, npoints=8192, test_step=5, features=False):
+    def __init__(self, in_file, block_size=8, npoints=8192, test_step=5, features=False):
 
-        self.filename = filename
-        self.folder = Path(folder)
+        self.filename = in_file
+        # self.folder = Path(folder)
         self.bs = block_size
         self.npoints = npoints
         self.features = features
         self.step = test_step
 
         # load the points
-        self.xyzni, self.info_las_file = read_las_format(self.folder / f"{filename}.las")
+        self.xyzni, self.info_las_file = read_las_format(in_file)
 
         discretized = ((self.xyzni[:, :2]).astype(float) / self.step).astype(int)
         self.pts = np.unique(discretized, axis=0)
@@ -159,8 +159,8 @@ def test(args, flist_test, model_folder, info_class):
 
     for filename in flist_test:
         print(filename)
-        ds_tst = PartDatasetTest(filename, args.rootdir, block_size=args.blocksize,
-                                 npoints=args.npoints, test_step=args.test_step, features=features)
+        in_file = laspy.file.File(args.rootdir / f"{filename}.las", mode='r')
+        ds_tst = PartDatasetTest(in_file, block_size=args.blocksize, npoints=args.npoints, test_step=args.test_step, features=features)
         tst_loader = torch.utils.data.DataLoader(ds_tst, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
 
         xyz = ds_tst.xyzni[:, :3]
