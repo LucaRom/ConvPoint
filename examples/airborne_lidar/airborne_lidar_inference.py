@@ -159,7 +159,7 @@ def test(args, flist_test, model_folder, info_class):
 
     for filename in flist_test:
         print(filename)
-        in_file = laspy.file.File(args.rootdir / f"{filename}.las", mode='r')
+        in_file = laspy.file.File(Path(args.rootdir) / f"{filename}.las", mode='r')
         ds_tst = PartDatasetTest(in_file, block_size=args.blocksize, npoints=args.npoints, test_step=args.test_step, features=features)
         tst_loader = torch.utils.data.DataLoader(ds_tst, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
 
