@@ -159,49 +159,49 @@ def test(args, flist_test, model_folder, info_class):
 
     for filename in flist_test:
         print(filename)
-        in_file = laspy.file.File(Path(args.rootdir) / f"{filename}.las", mode='r')
-        ds_tst = PartDatasetTest(in_file, block_size=args.blocksize, npoints=args.npoints, test_step=args.test_step, features=features)
-        tst_loader = torch.utils.data.DataLoader(ds_tst, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
+        with laspy.file.File(Path(args.rootdir) / f"{filename}.las", mode='r') as in_file:
+            ds_tst = PartDatasetTest(in_file, block_size=args.blocksize, npoints=args.npoints, test_step=args.test_step, features=features)
+            tst_loader = torch.utils.data.DataLoader(ds_tst, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
 
-        xyz = ds_tst.xyzni[:, :3]
-        scores = np.zeros((xyz.shape[0], nb_class))
+            xyz = ds_tst.xyzni[:, :3]
+            scores = np.zeros((xyz.shape[0], nb_class))
 
-        total_time = 0
-        iter_nb = 0
-        with torch.no_grad():
-            t = tqdm(tst_loader, ncols=150)
-            for pts, features, indices in t:
-                t1 = time.time()
-                features = features.cuda()
-                pts = pts.cuda()
-                outputs = net(features, pts)
-                t2 = time.time()
+            total_time = 0
+            iter_nb = 0
+            with torch.no_grad():
+                t = tqdm(tst_loader, ncols=150)
+                for pts, features, indices in t:
+                    t1 = time.time()
+                    features = features.cuda()
+                    pts = pts.cuda()
+                    outputs = net(features, pts)
+                    t2 = time.time()
 
-                outputs_np = outputs.cpu().numpy().reshape((-1, nb_class))
-                scores[indices.cpu().numpy().ravel()] += outputs_np
+                    outputs_np = outputs.cpu().numpy().reshape((-1, nb_class))
+                    scores[indices.cpu().numpy().ravel()] += outputs_np
 
-                iter_nb += 1
-                total_time += (t2 - t1)
-                t.set_postfix(time=f"{total_time / (iter_nb * args.batchsize):05e}")
+                    iter_nb += 1
+                    total_time += (t2 - t1)
+                    t.set_postfix(time=f"{total_time / (iter_nb * args.batchsize):05e}")
 
-        mask = np.logical_not(scores.sum(1) == 0)
-        scores = scores[mask]
-        pts_src = xyz[mask]
+            mask = np.logical_not(scores.sum(1) == 0)
+            scores = scores[mask]
+            pts_src = xyz[mask]
 
-        # create the scores for all points
-        scores = nearest_correspondance(pts_src, xyz, scores, K=1)
+            # create the scores for all points
+            scores = nearest_correspondance(pts_src, xyz, scores, K=1)
 
-        # compute softmax
-        scores = scores - scores.max(axis=1)[:, None]
-        scores = np.exp(scores) / np.exp(scores).sum(1)[:, None]
-        scores = np.nan_to_num(scores)
-        scores = scores.argmax(1)
+            # compute softmax
+            scores = scores - scores.max(axis=1)[:, None]
+            scores = np.exp(scores) / np.exp(scores).sum(1)[:, None]
+            scores = np.nan_to_num(scores)
+            scores = scores.argmax(1)
 
-        # Save predictions
-        out_folder = model_folder / 'tst'
-        out_folder.mkdir(exist_ok=True)
-        write_to_las(model_folder / f"{filename}_predictions.las", xyz=xyz, pred=scores, info_las_file=ds_tst.info_las_file,
-                     info_class=info_class['class_info'])
+            # Save predictions
+            out_folder = model_folder / 'tst'
+            out_folder.mkdir(exist_ok=True)
+            write_to_las(model_folder / f"{filename}_predictions.las", xyz=xyz, pred=scores, info_las_file=ds_tst.info_las_file,
+                         info_class=info_class['class_info'])
 
 
 def main():
