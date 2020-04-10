@@ -1,8 +1,10 @@
 # add the parent folder to the python path to access convpoint library
 import sys
 import warnings
-sys.path.append('/gpfs/fs2/nrcan/geobase/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/ConvPoint/convpoint')
-sys.path.append('/gpfs/fs2/nrcan/geobase/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/ConvPoint')
+# sys.path.append('/gpfs/fs2/nrcan/geobase/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/ConvPoint/convpoint')
+# sys.path.append('/gpfs/fs2/nrcan/geobase/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/ConvPoint')
+
+sys.path.append('/wspace/disk01/lidar/convpoint_tests/ConvPoint')
 
 import argparse
 import numpy as np
@@ -18,8 +20,8 @@ import yaml
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--modeldir", default='/wspace/disk01/lidar/convpoint_tests/results/HPC/SegBig_8168_drop0_2020-03-18-20-30-24/', type=str)
-    parser.add_argument("--rootdir", default='/wspace/disk01/lidar/convpoint_tests/las_file', type=str,
+    parser.add_argument("--modeldir", default='/wspace/disk01/lidar/convpoint_tests/results/SegBig_8168_drop0_2020-03-12-07-47-46', type=str)
+    parser.add_argument("--rootdir", default='/wspace/disk01/lidar/POINTCLOUD/data/', type=str,
                         help="Folder conntaining tst subfolder with las files.")
     parser.add_argument("--test_step", default=15, type=float)
 
@@ -44,8 +46,6 @@ def read_las_format(in_file):
     Will normalize XYZ and intensity between 0 and 1.
     """
 
-    # in_file = laspy.file.File(raw_path, mode='r')
-    header = in_file.header
     n_points = len(in_file)
     x = np.reshape(in_file.x, (n_points, 1))
     y = np.reshape(in_file.y, (n_points, 1))
@@ -60,23 +60,20 @@ def read_las_format(in_file):
     norm_x = x - min_x
     norm_y = y - min_y
     norm_z = z - min_z
-    # print(f"x: {min_x}  {np.max(x)}\n "
-    #       f"Y: {min_y}  {np.max(y)}\n "
-    #       f"z: {min_z}  {np.max(z)}\n ")
     # Intensity is normalized based on min max values.
     norm_intensity = (intensity - np.min(intensity)) / (np.max(intensity) - np.min(intensity))
     xyzni = np.hstack((norm_x, norm_y, norm_z, nb_return, norm_intensity)).astype(np.float16)
 
-    return xyzni, {'min_x': min_x, 'min_y': min_y, 'min_z': min_z, 'header': header}
+    return xyzni
 
 
-def write_to_las(filename, xyz, pred, info_las_file, info_class):
+def write_to_las(filename, xyz, pred, header, info_class):
     """Write xyz and ASPRS predictions to las file format. """
     # TODO: Write CRS info with file.
-    with laspy.file.File(filename, mode='w', header=info_las_file['header']) as out_file:
-        out_file.x = xyz[:, 0] + info_las_file['min_x']
-        out_file.y = xyz[:, 1] + info_las_file['min_y']
-        out_file.z = xyz[:, 2] + info_las_file['min_z']
+    with laspy.file.File(filename, mode='w', header=header) as out_file:
+        out_file.x = xyz[:, 0]
+        out_file.y = xyz[:, 1]
+        out_file.z = xyz[:, 2]
         pred = pred_to_asprs(pred, info_class)
         out_file.classification = pred
 
@@ -102,14 +99,13 @@ class PartDatasetTest():
     def __init__(self, in_file, block_size=8, npoints=8192, test_step=5, features=False):
 
         self.filename = in_file
-        # self.folder = Path(folder)
         self.bs = block_size
         self.npoints = npoints
         self.features = features
         self.step = test_step
 
         # load the points
-        self.xyzni, self.info_las_file = read_las_format(in_file)
+        self.xyzni = read_las_format(in_file)
 
         discretized = ((self.xyzni[:, :2]).astype(float) / self.step).astype(int)
         self.pts = np.unique(discretized, axis=0)
@@ -200,7 +196,9 @@ def test(args, filename, model_folder, info_class):
         # Save predictions
         out_folder = model_folder / 'tst'
         out_folder.mkdir(exist_ok=True)
-        write_to_las(model_folder / f"{filename}_predictions.las", xyz=xyz, pred=scores, info_las_file=ds_tst.info_las_file,
+        header = in_file.header
+        xyz = np.vstack((in_file.x, in_file.y, in_file.z)).transpose()
+        write_to_las(model_folder / f"{filename}_predictions.las", xyz=xyz, pred=scores, header=header,
                      info_class=info_class['class_info'])
 
 
