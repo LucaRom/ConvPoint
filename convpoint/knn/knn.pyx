@@ -8,11 +8,11 @@ import cython
 cdef extern from "knn_.h":
     void cpp_knn(const float* points, const size_t npts, const size_t dim, 
 			const float* queries, const size_t nqueries,
-			const size_t K, long* indices)
+			const size_t K, signed long long* indices)
 
     void cpp_knn_omp(const float* points, const size_t npts, const size_t dim, 
                 const float* queries, const size_t nqueries,
-                const size_t K, long* indices)
+                const size_t K, signed long long* indices)
 
     void cpp_knn_batch(const float* batch_data, const size_t batch_size, const size_t npts, const size_t dim,
                 const float* queries, const size_t nqueries,
@@ -60,11 +60,11 @@ def knn(pts, queries, K, omp=False):
     if omp:
         cpp_knn_omp(<float*> pts_cpp.data, npts, dim, 
                 <float*> queries_cpp.data, nqueries,
-                K_cpp, <long*> indices_cpp.data)
+                K_cpp, <signed long long*> indices_cpp.data)
     else:
         cpp_knn(<float*> pts_cpp.data, npts, dim,
                 <float*> queries_cpp.data, nqueries,
-                K_cpp, <long*> indices_cpp.data)
+                K_cpp, <signed long long*> indices_cpp.data)
 
     return indices
 

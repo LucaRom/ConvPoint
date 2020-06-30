@@ -37,9 +37,19 @@ def read_las_format(raw_path, normalize=True):
 
     if normalize:
         # Converting data to relative xyz reference system.
+        min_lbs= np.min(labels)
+        max_lbs= np.max(labels)
+        mask= (labels >= 0)
+        x= x[mask].reshape((-1,1))
+        y = y[mask].reshape((-1,1))
+        z = z[mask].reshape((-1,1))
+        intensity = intensity[mask].reshape((-1,1))
+        nb_return = nb_return[mask].reshape((-1,1))
+        labels = labels[mask].reshape((-1,1))
         norm_x = x - np.min(x)
         norm_y = y - np.min(y)
         norm_z = z - np.min(z)
+
         # Intensity is normalized based on min max values.
         norm_intensity = (intensity - np.min(intensity)) / (np.max(intensity) - np.min(intensity))
         xyzni = np.hstack((norm_x, norm_y, norm_z, nb_return, norm_intensity)).astype(np.float16)

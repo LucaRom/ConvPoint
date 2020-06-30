@@ -3,11 +3,11 @@
 #include <cstdlib>
 void cpp_knn(const float* points, const size_t npts, const size_t dim, 
 			const float* queries, const size_t nqueries,
-			const size_t K, long* indices);
+			const size_t K, signed long long* indices);
 
 void cpp_knn_omp(const float* points, const size_t npts, const size_t dim, 
 			const float* queries, const size_t nqueries,
-			const size_t K, long* indices);
+			const size_t K, signed long long* indices);
 
 
 void cpp_knn_batch(const float* batch_data, const size_t batch_size, const size_t npts, const size_t dim,

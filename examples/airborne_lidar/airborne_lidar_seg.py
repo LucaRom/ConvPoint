@@ -107,6 +107,8 @@ def rotate_point_cloud_z(batch_data):
 def class_mode(mode):
     """
     Dict containing the mapping of input (from the .las file) and the output classes (for the training step).
+    ASPRS Codes used for this classification ASPRS 1 = Unclassified ASPRS 2 = Ground ASPRS 3 = Low Vegetation ASPRS 4 = Medium Vegetation ASPRS 5 = High Vegetation ASPRS 6 = Buildings ASPRS 7 = Low Noise ASPRS 8 = Model Key-Point ASPRS 9 = Water ASPRS 17 = Bridge ASPRS 18 = High Noise
+Entit
     """
     asprs_class_def = {'2': {'name': 'Ground', 'color': [233, 233, 229], 'mode': 0},  # light grey
                        '3': {'name': 'Low vegetation', 'color': [77, 174, 84], 'mode': 0},  # bright green
@@ -115,14 +117,27 @@ def class_mode(mode):
                        '6': {'name': 'Building', 'color': [223, 52, 52], 'mode': 0},  # red
                        '9': {'name': 'Water', 'color': [95, 156, 196], 'mode': 0}  # blue
                        }
+    dales_class_def = {'1': {'name': 'Ground', 'color': [233, 233, 229], 'mode': 0},  # light grey
+                       '2': {'name': 'vegetation', 'color': [77, 174, 84], 'mode': 0},  # bright green
+                       '3': {'name': 'cars', 'color': [255, 163, 148], 'mode': 0},  # bluegreen
+                       '4': {'name': 'trucks', 'color': [255, 135, 75], 'mode': 0},  # dark green
+                       '5': {'name': 'power lines', 'color': [255, 135, 75], 'mode': 0},  # dark green
+                       '6': {'name': 'fences', 'color': [255, 135, 75], 'mode': 0},  # dark green
+                       '7': {'name': 'poles', 'color': [255, 135, 75], 'mode': 0},  # dark green
+                       '8': {'name': 'Building', 'color': [223, 52, 52], 'mode': 0}
+                       }
     coi = {}
     unique_class = []
     if mode == 1:
         asprs_class_to_use = {'6': 1, '9': 2, '2': 3}
 
     elif mode == 2:
-        asprs_class_to_use = {'6': 1, '9': 2, '2': 3, '3': 4, '4': 5, '5': 5}
-
+        asprs_class_to_use = {'6': 1, '9': 2, '2': 3, '3': 4, '4': 5, '5': 5}  # considering medium and high vegetation as the same class
+    elif mode == 3:
+        asprs_class_to_use = {'6': 1, '9': 2, '2': 3, '3': 4, '4': 5, '5': 6} # considering medium and high vegetation as different classes
+    elif mode == 4:
+        asprs_class_def= dales_class_def
+        asprs_class_to_use = {'1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8} # ground(1), vegetation(2), cars(3), trucks(4), power lines(5), fences(6), poles(7) and buildings(8)
     else:
         raise ValueError(f"Class mode provided ({mode}) is not defined.")
 
@@ -229,21 +244,32 @@ class PartDatasetTest():
         self.npoints = npoints
         self.features = features
         self.step = test_step
-
+        self.islabels= labels
+        self.h5file = self.folder / f"{self.filename}.hdfs"
         # load the points
-        data_file = h5py.File(self.folder / f"{filename}.hdfs", 'r')
-        self.xyzni = data_file["xyzni"][:]
-        if labels:
-            self.labels = data_file["labels"][:]
-        else:
-            self.labels = None
+        with h5py.File(self.h5file, 'r') as data_file:
+            self.xyzni = data_file["xyzni"][:]
+            if self.islabels:
+                self.labels = data_file["labels"][:]
+            else:
+                self.labels = None
 
-        discretized = ((self.xyzni[:, :2]).astype(float) / self.step).astype(int)
-        self.pts = np.unique(discretized, axis=0)
-        self.pts = self.pts.astype(np.float) * self.step
+            discretized = ((self.xyzni[:, :2]).astype(float) / self.step).astype(int)
+            self.pts = np.unique(discretized, axis=0)
+            self.pts = self.pts.astype(np.float) * self.step
 
     def __getitem__(self, index):
+        if self.pts is None:
+            with h5py.File(self.h5file, 'r') as data_file:
+                self.xyzni = data_file["xyzni"][:]
+                if self.islabels:
+                    self.labels = data_file["labels"][:]
+                else:
+                    self.labels = None
 
+                discretized = ((self.xyzni[:, :2]).astype(float) / self.step).astype(int)
+                self.pts = np.unique(discretized, axis=0)
+                self.pts = self.pts.astype(np.float) * self.step
         # get the data
         mask = self.compute_mask(self.pts[index], self.bs)
         pts = self.xyzni[mask]
@@ -271,6 +297,17 @@ class PartDatasetTest():
         return pts, fts, indices
 
     def __len__(self):
+        if self.pts is None:
+            with h5py.File(self.h5file, 'r') as data_file:
+                self.xyzni = data_file["xyzni"][:]
+                if self.islabels:
+                    self.labels = data_file["labels"][:]
+                else:
+                    self.labels = None
+
+                discretized = ((self.xyzni[:, :2]).astype(float) / self.step).astype(int)
+                self.pts = np.unique(discretized, axis=0)
+                self.pts = self.pts.astype(np.float) * self.step
         return len(self.pts)
 
 
@@ -406,6 +443,14 @@ def train(args, dataset_dict, info_class):
         # save the model
         torch.save(net.state_dict(), root_folder / "state_dict.pth")
 
+        state = {
+            'epoch': epoch,
+            'state_dict': net.state_dict(),
+            'optimizer': optimizer.state_dict(),
+            'args':args
+        }
+        torch.save(state, root_folder / "state_dict.pth")
+
         # write the logs
         val_metrics_values = {'loss': f"{val_loss / cm_val.sum():.4e}", 'acc': acc_val[0], 'iou': iou_val[0], 'fscore': fscore_val[0]}
         val_class_score = {'acc': acc_val[1], 'iou': iou_val[1], 'fscore': fscore_val[1]}
@@ -422,7 +467,8 @@ def test(args, flist_test, model_folder, info_class):
     # create the network
     print("Creating network...")
     net, features = get_model(nb_class, args)
-    net.load_state_dict(torch.load(model_folder / "state_dict.pth"))
+    state = torch.load(model_folder / "state_dict.pth")
+    net.load_state_dict(state['state_dict'])
     net.cuda()
     net.eval()
     print(f"Number of parameters in the model: {count_parameters(net):,}")

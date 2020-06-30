@@ -13,7 +13,8 @@ data = data + 0
 
 
 # start = time.time()
-# indices = nearest_neighbors.knn(data.cpu().numpy(), data.cpu().numpy(), K)
+indices = nearest_neighbors.knn(data.cpu().numpy(), data.cpu().numpy(), K, omp=True)
+print(indices)
 # print(time.time() - start)
 
 # start = time.time()
@@ -30,6 +31,7 @@ data = torch.from_numpy(data).float()
 
 # start = time.time()
 indices = nearest_neighbors.knn_batch(data.cpu().numpy(), data.cpu().numpy(), K, omp=True)
+print(indices)
 # print(time.time() - start)
 
 #start = time.time()

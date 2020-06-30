@@ -21,7 +21,7 @@ using namespace std;
 
 void cpp_knn(const float* points, const size_t npts, const size_t dim, 
 			const float* queries, const size_t nqueries,
-			const size_t K, long* indices){
+			const size_t K, signed long long* indices){
 
 	// create the kdtree
 	typedef KDTreeTableAdaptor< float, float> KDTree;
@@ -38,14 +38,14 @@ void cpp_knn(const float* points, const size_t npts, const size_t dim,
 		resultSet.init(&out_ids[0], &out_dists_sqr[0] );
 		mat_index.index->findNeighbors(resultSet, &queries[i*dim], nanoflann::SearchParams(10));
 		for(size_t j=0; j<K; j++){
-			indices[i*K+j] = long(out_ids[j]);
+			indices[i*K+j] = (signed long long)(out_ids[j]);
 		}
 	}
 }
 
 void cpp_knn_omp(const float* points, const size_t npts, const size_t dim, 
 			const float* queries, const size_t nqueries,
-			const size_t K, long* indices){
+			const size_t K, signed long long* indices){
 
 	// create the kdtree
 	typedef KDTreeTableAdaptor< float, float> KDTree;
@@ -63,7 +63,7 @@ void cpp_knn_omp(const float* points, const size_t npts, const size_t dim,
 		resultSet.init(&out_ids[0], &out_dists_sqr[0] );
 		mat_index.index->findNeighbors(resultSet, &queries[i*dim], nanoflann::SearchParams(10));
 		for(size_t j=0; j<K; j++){
-			indices[i*K+j] = long(out_ids[j]);
+			indices[i*K+j] = (signed long long)(out_ids[j]);
 		}
 	}
 }
