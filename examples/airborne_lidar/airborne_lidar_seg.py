@@ -3,7 +3,7 @@
 # add the parent folder to the python path to access convpoint library
 import sys
 import warnings
-sys.path.append('/gpfs/fs2/nrcan/geobase/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/ConvPoint')
+sys.path.append('/space/partner/nrcan/geobase/work/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/ConvPoint')
 
 import argparse
 import numpy as np
@@ -21,14 +21,18 @@ from examples.airborne_lidar.airborne_lidar_utils import InformationLogger, prin
 import h5py
 from pathlib import Path
 from examples.airborne_lidar.airborne_lidar_viz import prediction2ply, error2ply
+from mlflow import log_params, set_tracking_uri, set_experiment
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--test", default=True)
     parser.add_argument("--savepts", action="store_true")
-    parser.add_argument("--savedir", default='/wspace/disk01/lidar/convpoint_tests/results', type=str)
-    parser.add_argument("--rootdir", default='/wspace/disk01/lidar/convpoint_tests/prepared', type=str)
+    parser.add_argument("--savedir",
+                        default='/space/partner/nrcan/geobase/work/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/results', type=str)
+    parser.add_argument("--rootdir",
+                        default='/space/partner/nrcan/geobase/work/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/prepared', type=str)
+    parser.add_argument("--mlruns_dir", default='/space/partner/nrcan/geobase/work/transfer/work/deep_learning/mlflow/mlruns')
     parser.add_argument("--batchsize", "-b", default=10, type=int)
     parser.add_argument("--npoints", default=8168, type=int, help="Number of points to be sampled in the block.")
     parser.add_argument("--blocksize", default=50, type=int, help="Size of the infinite vertical column, to be processed.")
@@ -124,7 +128,7 @@ Entit
                        '5': {'name': 'power lines', 'color': [255, 135, 75], 'mode': 0},  # dark green
                        '6': {'name': 'fences', 'color': [255, 135, 75], 'mode': 0},  # dark green
                        '7': {'name': 'poles', 'color': [255, 135, 75], 'mode': 0},  # dark green
-                       '8': {'name': 'Building', 'color': [223, 52, 52], 'mode': 0}
+                       '8': {'name': 'Building', 'color': [223, 52, 52], 'mode': 0}  # red
                        }
     coi = {}
     unique_class = []
@@ -134,10 +138,11 @@ Entit
     elif mode == 2:
         asprs_class_to_use = {'6': 1, '9': 2, '2': 3, '3': 4, '4': 5, '5': 5}  # considering medium and high vegetation as the same class
     elif mode == 3:
-        asprs_class_to_use = {'6': 1, '9': 2, '2': 3, '3': 4, '4': 5, '5': 6} # considering medium and high vegetation as different classes
+        asprs_class_to_use = {'6': 1, '9': 2, '2': 3, '3': 4, '4': 5, '5': 6}  # considering medium and high vegetation as different classes
     elif mode == 4:
-        asprs_class_def= dales_class_def
-        asprs_class_to_use = {'1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8} # ground(1), vegetation(2), cars(3), trucks(4), power lines(5), fences(6), poles(7) and buildings(8)
+        asprs_class_def = dales_class_def
+        # ground(1), vegetation(2), cars(3), trucks(4), power lines(5), fences(6), poles(7) and buildings(8)
+        asprs_class_to_use = {'1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8}
     else:
         raise ValueError(f"Class mode provided ({mode}) is not defined.")
 
@@ -364,8 +369,8 @@ def train(args, dataset_dict, info_class):
     print("done at", root_folder)
 
     # create the log file
-    trn_logs = InformationLogger(root_folder, 'trn')
-    val_logs = InformationLogger(root_folder, 'val')
+    trn_logs = InformationLogger('trn')
+    val_logs = InformationLogger('val')
 
     # iterate over epochs
     for epoch in range(args.nepochs):
@@ -404,8 +409,8 @@ def train(args, dataset_dict, info_class):
         fscore = metrics.stats_f1score_per_class(cm)
         trn_metrics_values = {'loss': f"{train_loss / cm.sum():.4e}", 'acc': acc[0], 'iou': iou[0], 'fscore': fscore[0]}
         trn_class_score = {'acc': acc[1], 'iou': iou[1], 'fscore': fscore[1]}
-        trn_logs.add_metric_values(trn_metrics_values, epoch)
-        trn_logs.add_class_scores(trn_class_score, epoch)
+        trn_logs.add_values(trn_metrics_values, epoch)
+        trn_logs.add_values(trn_class_score, epoch, classwise=True)
         print_metric('Training', 'F1-Score', fscore)
 
         ######
@@ -455,8 +460,8 @@ def train(args, dataset_dict, info_class):
         val_metrics_values = {'loss': f"{val_loss / cm_val.sum():.4e}", 'acc': acc_val[0], 'iou': iou_val[0], 'fscore': fscore_val[0]}
         val_class_score = {'acc': acc_val[1], 'iou': iou_val[1], 'fscore': fscore_val[1]}
 
-        val_logs.add_metric_values(val_metrics_values, epoch)
-        val_logs.add_class_scores(val_class_score, epoch)
+        val_logs.add_values(val_metrics_values, epoch)
+        val_logs.add_values(val_class_score, epoch, classwise=True)
         print_metric('Validation', 'F1-Score', fscore_val)
 
     return root_folder
@@ -515,7 +520,7 @@ def test(args, flist_test, model_folder, info_class):
 
         # Compute confusion matrix
         if args.test_labels:
-            tst_logs = InformationLogger(model_folder, 'tst')
+            tst_logs = InformationLogger('tst')
             lbl = ds_tst.labels[:, :]
 
             cm = confusion_matrix(lbl.ravel(), scores.ravel(), labels=list(range(nb_class)))
@@ -530,8 +535,8 @@ def test(args, flist_test, model_folder, info_class):
             print_metric('Test', 'F1-Score', cl_fscore)
             tst_avg_score = {'loss': -1, 'acc': cl_acc[0], 'iou': cl_iou[0], 'fscore': [0]}
             tst_class_score = {'acc': cl_acc[1], 'iou': cl_iou[1], 'fscore': cl_fscore[1]}
-            tst_logs.add_metric_values(tst_avg_score, -1)
-            tst_logs.add_class_scores(tst_class_score, -1)
+            tst_logs.add_values(tst_avg_score, -1)
+            tst_logs.add_values(tst_class_score, -1, classwise=True)
 
             # write error file.
             # error2ply(model_folder / f"{filename}_error.ply", xyz=xyz, labels=lbl, prediction=scores, info_class=info_class['class_info'])
@@ -545,6 +550,11 @@ def test(args, flist_test, model_folder, info_class):
 
 def main():
     args = parse_args()
+
+    # mlflow settings
+    set_tracking_uri(args.mlruns_dir)
+    set_experiment('ConvPoint')
+    log_params(vars(args))
 
     # create the file lists (trn / val / tst)
     print("Create file list...")

@@ -1,7 +1,7 @@
 # add the parent folder to the python path to access convpoint library
 import sys
 import warnings
-sys.path.append('/gpfs/fs2/nrcan/geobase/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/ConvPoint')
+sys.path.append('/space/partner/nrcan/geobase/work/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/ConvPoint')
 
 import argparse
 import numpy as np

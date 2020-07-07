@@ -2,6 +2,7 @@ import h5py
 import os
 import warnings
 import yaml
+from mlflow import log_metric
 
 
 def tsv_line(*args):
@@ -20,38 +21,19 @@ def write_features(file_name, xyzni, labels= None):
 
 
 class InformationLogger(object):
-    def __init__(self, log_folder, mode):
-        # List of metrics names
-        self.metrics = ['loss', 'iou', 'acc', 'fscore']
-        self.metrics_classwise = ['iou', 'acc', 'fscore']
+    def __init__(self, mode):
         self.mode = mode
 
-        # Dicts of logs
-        def open_log(metric_name, fmt_str="metric_{}_{}.log"):
-            filename = fmt_str.format(mode, metric_name)
-            return open(log_folder / filename, "a", buffering=1)
+    def add_values(self, metrics, epoch, classwise=False):
+        """Add new information to the logs."""
+        if classwise:
+            for key, val in metrics.items():
+                for cls in val:
+                    log_metric(key=f"{self.mode}_{key}_{val.index(cls)}", value=cls.avg, step=epoch)
 
-        self.metric_values = {m: open_log(m) for m in self.metrics}
-        self.class_scores = {m: open_log(m, fmt_str="metric_classwise_{}_{}.log") for m in self.metrics_classwise}
-
-    def add_metric_values(self, values, epoch):
-        """Add new information to the averaged logs."""
-        for key in values:
-            if key in self.metric_values:
-                self.metric_values[key].write(tsv_line(epoch, values[key]))
-            else:
-                warnings.warn(f"Unknown metric {key}")
-
-    def add_class_scores(self, values, epoch):
-        """Add new information to the classwise logs."""
-        for key, value in values.items():
-            if key in self.class_scores:
-                counter = 0
-                for num in value:
-                    self.class_scores[key].write(tsv_line(epoch, counter, num))
-                    counter += 1
-            else:
-                warnings.warn(f"Unknown metric {key}")
+        else:
+            for key, val in metrics.items():
+                log_metric(key=f"{self.mode}_{key}", value=val, step=epoch)
 
 
 def print_metric(mode, metric, values):
