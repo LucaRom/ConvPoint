@@ -29,11 +29,11 @@ class InformationLogger(object):
         if classwise:
             for key, val in metrics.items():
                 for cls in val:
-                    log_metric(key=f"{self.mode}_{key}_{val.index(cls)}", value=cls.avg, step=epoch)
+                    log_metric(key=f"{self.mode}_{key}_{val.index(cls)}", value=float(cls), step=epoch)
 
         else:
             for key, val in metrics.items():
-                log_metric(key=f"{self.mode}_{key}", value=val, step=epoch)
+                log_metric(key=f"{self.mode}_{key}", value=float(val), step=epoch)
 
 
 def print_metric(mode, metric, values):
