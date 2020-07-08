@@ -48,9 +48,7 @@ def parse_args():
     parser.add_argument("--drop", default=0, type=float)
 
     parser.add_argument("--lr", default=1e-3, help="Learning rate")
-    parser.add_argument("--mode", default=2, type=int, help="Class mode. Currently 2 choices available. "
-                                                            "1: building, water, ground."
-                                                            "2: building, water, ground, low vegetation and medium + high vegetation")
+    parser.add_argument("--mode", default=2, type=int, help="Class mode. See class_mode function for more available options.")
     args = parser.parse_args()
     return args
 
@@ -111,7 +109,18 @@ def rotate_point_cloud_z(batch_data):
 def class_mode(mode):
     """
     Dict containing the mapping of input (from the .las file) and the output classes (for the training step).
-    ASPRS Codes used for this classification ASPRS 1 = Unclassified ASPRS 2 = Ground ASPRS 3 = Low Vegetation ASPRS 4 = Medium Vegetation ASPRS 5 = High Vegetation ASPRS 6 = Buildings ASPRS 7 = Low Noise ASPRS 8 = Model Key-Point ASPRS 9 = Water ASPRS 17 = Bridge ASPRS 18 = High Noise
+    ASPRS Codes used for this classification
+        ASPRS 1 = Unclassified
+        ASPRS 2 = Ground
+        ASPRS 3 = Low Vegetation
+        ASPRS 4 = Medium Vegetation
+        ASPRS 5 = High Vegetation
+        ASPRS 6 = Buildings
+        ASPRS 7 = Low Noise
+        ASPRS 8 = Model Key-Point
+        ASPRS 9 = Water
+        ASPRS 17 = Bridge
+        ASPRS 18 = High Noise
 Entit
     """
     asprs_class_def = {'2': {'name': 'Ground', 'color': [233, 233, 229], 'mode': 0},  # light grey
@@ -134,7 +143,6 @@ Entit
     unique_class = []
     if mode == 1:
         asprs_class_to_use = {'6': 1, '9': 2, '2': 3}
-
     elif mode == 2:
         asprs_class_to_use = {'6': 1, '9': 2, '2': 3, '3': 4, '4': 5, '5': 5}  # considering medium and high vegetation as the same class
     elif mode == 3:
@@ -170,6 +178,9 @@ class PartDatasetTrainVal():
         self.iterations = iteration_number
         self.features = features
         self.class_info = class_info
+        self.tolerance_percent = 20
+        self.xyzni = None
+        self.labels = None
 
     def __getitem__(self, index):
 
@@ -179,21 +190,17 @@ class PartDatasetTrainVal():
         data_file = h5py.File(self.folder / f"{dataset}.hdfs", 'r')
 
         # Get the features
-        xyzni = data_file["xyzni"][:]
-        labels = data_file["labels"][:]
-        labels = self.format_classes(labels)
+        self.xyzni = data_file["xyzni"][:]
+        self.labels = self.format_classes(data_file["labels"][:])
+        # self.labels = self.format_classes(self.labels)
 
         # pick a random point
-        pt_id = random.randint(0, xyzni.shape[0] - 1)
-        pt = xyzni[pt_id, :3]
+        pt_id = random.randint(0, self.xyzni.shape[0] - 1)
+        pt = self.xyzni[pt_id, :3]
 
-        # Create the mask
-        mask_x = np.logical_and(xyzni[:, 0] < pt[0] + self.bs / 2, xyzni[:, 0] > pt[0] - self.bs / 2)
-        mask_y = np.logical_and(xyzni[:, 1] < pt[1] + self.bs / 2, xyzni[:, 1] > pt[1] - self.bs / 2)
-        mask = np.logical_and(mask_x, mask_y)
-        pts = xyzni[mask]
-        lbs = labels[mask]
-        # print(pts.shape)
+        # Create the mask and select all points in the column.
+        pts, lbs = self.adapt_mask(pt)
+
         # Random selection of npoints in the masked points
         choice = np.random.choice(pts.shape[0], self.npoints, replace=True)
         pts = pts[choice]
@@ -219,6 +226,32 @@ class PartDatasetTrainVal():
 
     def __len__(self):
         return self.iterations
+
+    def compute_mask(self, pt, bs):
+        # build the mask
+        mask_x = np.logical_and(self.xyzni[:, 0] < pt[0] + bs / 2, self.xyzni[:, 0] > pt[0] - bs / 2)
+        mask_y = np.logical_and(self.xyzni[:, 1] < pt[1] + bs / 2, self.xyzni[:, 1] > pt[1] - bs / 2)
+        mask = np.logical_and(mask_x, mask_y)
+        return mask
+
+    def adapt_mask(self, pt):
+        # First computation of mask and selection of points.
+        mask = self.compute_mask(pt, self.bs)
+        pts = self.xyzni[mask]
+
+        # Check if total number of points in the first mask is within tolerance.
+        npoints_dif = self.tolerance_percent / 100 * self.npoints
+        bs_factor = pts.shape[0] / self.npoints
+
+        if (bs_factor > (self.npoints + npoints_dif) * self.npoints) or (bs_factor < (self.npoints - npoints_dif) * self.npoints):
+            # Recompute mask with new block size if outside the tolerance.
+            bs = bs_factor * self.bs
+            print(f"New block size of {bs:.2f} m.")
+            mask = self.compute_mask(pt, bs)
+            pts = self.xyzni[mask]
+
+        lbs = self.labels[mask]
+        return pts, lbs
 
     def format_classes(self, labels):
         """Format labels array to match the classes of interest.

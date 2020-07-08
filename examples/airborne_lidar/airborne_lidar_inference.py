@@ -71,9 +71,10 @@ def write_las_to_h5(filename):
     with laspy.file.File(filename) as in_file:
         xyzni = read_las_format(in_file)
 
-        filename= f"{filename.parent / filename.name.split('.')[0]}_prepared.hdfs"
+        filename = f"{filename.parent / filename.name.split('.')[0]}_prepared.hdfs"
         write_features(filename, xyzni=xyzni)
         return filename
+
 
 def write_to_las(filename, xyz, pred, header, info_class):
     """Write xyz and ASPRS predictions to las file format. """
