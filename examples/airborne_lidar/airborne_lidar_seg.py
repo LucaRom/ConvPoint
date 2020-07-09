@@ -35,15 +35,18 @@ def parse_args():
     parser.add_argument("--mlruns_dir", default='/space/partner/nrcan/geobase/work/transfer/work/deep_learning/mlflow/mlruns')
     parser.add_argument("--batchsize", "-b", default=10, type=int)
     parser.add_argument("--npoints", default=8168, type=int, help="Number of points to be sampled in the block.")
-    parser.add_argument("--blocksize", default=50, type=int, help="Size of the infinite vertical column, to be processed.")
-    parser.add_argument("--iter", default=1, type=int)
+    parser.add_argument("--blocksize", default=25, type=int, help="Size of the infinite vertical column, to be processed.")
+    parser.add_argument("--tolerance", default=25, type=int,
+                        help="Tolerance (in %) of the difference between number of points expected and total in block size."
+                             "Outer tolerance, a new block size is calculated.")
+    parser.add_argument("--iter", default=500, type=int)
     parser.add_argument("--num_workers", default=8, type=int)
-    parser.add_argument("--features", default="xyzni", type=str, help="Features to process. xyzni means xyz + number of returns + intensity. "
-                                                                      "Currently, only xyz and xyzni are supported for this dataset.")
+    parser.add_argument("--features", default="xyz", type=str, help="Features to process. xyzni means xyz + number of returns + intensity. "
+                                                                    "Currently, only xyz and xyzni are supported for this dataset.")
     parser.add_argument("--test_step", default=50, type=float)
     parser.add_argument("--test_labels", default=True, type=bool, help="Labels available for test dataset")
-    parser.add_argument("--val_iter", default=1, type=int, help="Number of iterations at validation.")
-    parser.add_argument("--nepochs", default=1, type=int)
+    parser.add_argument("--val_iter", default=200, type=int, help="Number of iterations at validation.")
+    parser.add_argument("--nepochs", default=50, type=int)
     parser.add_argument("--model", default="SegBig", type=str, help="SegBig is the only available model at this time, for this dataset.")
     parser.add_argument("--drop", default=0, type=float)
 
@@ -168,7 +171,7 @@ Entit
 # Part dataset only for training / validation
 class PartDatasetTrainVal():
 
-    def __init__(self, filelist, folder, training, block_size, npoints, iteration_number, features, class_info):
+    def __init__(self, filelist, folder, training, block_size, npoints, iteration_number, features, class_info, tolerance_percent):
 
         self.filelist = filelist
         self.folder = Path(folder)
@@ -178,7 +181,7 @@ class PartDatasetTrainVal():
         self.iterations = iteration_number
         self.features = features
         self.class_info = class_info
-        self.tolerance_percent = 20
+        self.tolerance_percent = tolerance_percent
         self.xyzni = None
         self.labels = None
 
@@ -240,15 +243,24 @@ class PartDatasetTrainVal():
         pts = self.xyzni[mask]
 
         # Check if total number of points in the first mask is within tolerance.
-        npoints_dif = self.tolerance_percent / 100 * self.npoints
-        bs_factor = pts.shape[0] / self.npoints
+        density = int(pts.shape[0] / self.bs ** 2)
+        expected_density = int(self.npoints / self.bs ** 2)
+        bs_ratio = expected_density / density
 
-        if (bs_factor > (self.npoints + npoints_dif) * self.npoints) or (bs_factor < (self.npoints - npoints_dif) * self.npoints):
-            # Recompute mask with new block size if outside the tolerance.
-            bs = bs_factor * self.bs
-            print(f"New block size of {bs:.2f} m.")
+        # Recompute mask with new block size if outside the tolerance.
+        if bs_ratio > (1 + self.tolerance_percent / 100):
+            bs = bs_ratio * self.bs
             mask = self.compute_mask(pt, bs)
             pts = self.xyzni[mask]
+
+        elif bs_ratio < (1 - self.tolerance_percent / 100):
+            bs = ((self.tolerance_percent / 100) + bs_ratio) * self.bs
+            mask = self.compute_mask(pt, bs)
+            pts = self.xyzni[mask]
+
+        # print(f"Density: {density}, Expected_density: {expected_density}, Old BS: {self.bs}, New BS {bs:.2f}, old pt num: {pts.shape[0]}", end="")
+
+        # print(f", New pt num: {pts.shape[0]}")
 
         lbs = self.labels[mask]
         return pts, lbs
@@ -380,12 +392,12 @@ def train(args, dataset_dict, info_class):
     print("Creating dataloader and optimizer...", end="")
     ds_trn = PartDatasetTrainVal(filelist=dataset_dict['trn'], folder=args.rootdir, training=True, block_size=args.blocksize,
                                  npoints=args.npoints, iteration_number=args.batchsize * args.iter, features=features,
-                                 class_info=info_class['class_info'])
+                                 class_info=info_class['class_info'], tolerance_percent=args.tolerance)
     train_loader = torch.utils.data.DataLoader(ds_trn, batch_size=args.batchsize, shuffle=True, num_workers=args.num_workers)
 
     ds_val = PartDatasetTrainVal(filelist=dataset_dict['val'], folder=args.rootdir, training=False, block_size=args.blocksize,
                                  npoints=args.npoints, iteration_number=args.batchsize * args.val_iter, features=features,
-                                 class_info=info_class['class_info'])
+                                 class_info=info_class['class_info'], tolerance_percent=args.tolerance)
     val_loader = torch.utils.data.DataLoader(ds_val, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
 
     optimizer = torch.optim.Adam(net.parameters(), lr=float(args.lr))
