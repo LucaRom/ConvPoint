@@ -243,7 +243,7 @@ class PartDatasetTrainVal():
         pts = self.xyzni[mask]
 
         # Check if total number of points in the first mask is within tolerance.
-        density = int(pts.shape[0] / self.bs ** 2)
+        density = max(int(pts.shape[0] / self.bs ** 2), 1)
         expected_density = int(self.npoints / self.bs ** 2)
         bs_ratio = expected_density / density
 
