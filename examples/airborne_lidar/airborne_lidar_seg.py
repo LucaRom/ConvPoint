@@ -22,6 +22,7 @@ import h5py
 from pathlib import Path
 from examples.airborne_lidar.airborne_lidar_viz import prediction2ply, error2ply
 from mlflow import log_params, set_tracking_uri, set_experiment
+from math import sqrt
 
 
 def parse_args():
@@ -184,6 +185,7 @@ class PartDatasetTrainVal():
         self.tolerance_percent = tolerance_percent
         self.xyzni = None
         self.labels = None
+        self.local_info = True
 
     def __getitem__(self, index):
 
@@ -202,7 +204,7 @@ class PartDatasetTrainVal():
         pt = self.xyzni[pt_id, :3]
 
         # Create the mask and select all points in the column.
-        pts, lbs = self.adapt_mask(pt)
+        pts, lbs, local_info = self.adapt_mask(pt)
 
         # Random selection of npoints in the masked points
         choice = np.random.choice(pts.shape[0], self.npoints, replace=True)
@@ -215,6 +217,12 @@ class PartDatasetTrainVal():
         else:
             features = pts[:, 3:]
             features = features.astype(np.float32)
+        if self.local_info:
+            features = features[..., np.newaxis]
+            features[..., -1] = local_info['density']
+            features = features[..., np.newaxis]
+            features[..., -1] = local_info['bs']
+
         pts = pts[:, :3]
 
         # Data augmentation (rotation)
@@ -243,27 +251,20 @@ class PartDatasetTrainVal():
         pts = self.xyzni[mask]
 
         # Check if total number of points in the first mask is within tolerance.
-        density = max(int(pts.shape[0] / self.bs ** 2), 1)
+        local_density = max(int(pts.shape[0] / self.bs ** 2), 1)
         expected_density = int(self.npoints / self.bs ** 2)
-        bs_ratio = expected_density / density
+        density_ratio = expected_density / local_density
 
         # Recompute mask with new block size if outside the tolerance.
-        if bs_ratio > (1 + self.tolerance_percent / 100):
-            bs = bs_ratio * self.bs
+        if density_ratio > (1 + self.tolerance_percent / 100) or density_ratio < (1 - self.tolerance_percent / 100):
+            bs = sqrt(density_ratio) * self.bs
             mask = self.compute_mask(pt, bs)
             pts = self.xyzni[mask]
-
-        elif bs_ratio < (1 - self.tolerance_percent / 100):
-            bs = ((self.tolerance_percent / 100) + bs_ratio) * self.bs
-            mask = self.compute_mask(pt, bs)
-            pts = self.xyzni[mask]
-
-        # print(f"Density: {density}, Expected_density: {expected_density}, Old BS: {self.bs}, New BS {bs:.2f}, old pt num: {pts.shape[0]}", end="")
-
-        # print(f", New pt num: {pts.shape[0]}")
+        else:
+            bs = self.bs
 
         lbs = self.labels[mask]
-        return pts, lbs
+        return pts, lbs, {'density': local_density, 'bs': bs}
 
     def format_classes(self, labels):
         """Format labels array to match the classes of interest.
