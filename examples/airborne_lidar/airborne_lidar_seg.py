@@ -37,8 +37,8 @@ def parse_args():
     parser.add_argument("--batchsize", "-b", default=10, type=int)
     parser.add_argument("--npoints", default=8168, type=int, help="Number of points to be sampled in the block.")
     parser.add_argument("--blocksize", default=25, type=int, help="Size of the infinite vertical column, to be processed.")
-    parser.add_argument("--tolerance", default=25, type=int,
-                        help="Tolerance (in %) of the difference between number of points expected and total in block size."
+    parser.add_argument("--tolerance", default=[5, 25], type=list,
+                        help="Tolerance range (in %) of the difference between number of points expected (npoints) and total in block size."
                              "Outer tolerance, a new block size is calculated.")
     parser.add_argument("--iter", default=500, type=int)
     parser.add_argument("--num_workers", default=8, type=int)
@@ -174,7 +174,7 @@ Entit
 # Part dataset only for training / validation
 class PartDatasetTrainVal():
 
-    def __init__(self, filelist, folder, training, block_size, npoints, iteration_number, features, class_info, tolerance_percent, local_info):
+    def __init__(self, filelist, folder, training, block_size, npoints, iteration_number, features, class_info, tolerance_range, local_info):
 
         self.filelist = filelist
         self.folder = Path(folder)
@@ -184,7 +184,7 @@ class PartDatasetTrainVal():
         self.iterations = iteration_number
         self.features = features
         self.class_info = class_info
-        self.tolerance_percent = tolerance_percent
+        self.tolerance_range = tolerance_range
         self.xyzni = None
         self.labels = None
         self.local_info = local_info
@@ -252,13 +252,13 @@ class PartDatasetTrainVal():
         pts = self.xyzni[mask]
 
         # Check if total number of points in the first mask is within tolerance.
-        local_density = max(int(pts.shape[0] / self.bs ** 2), 1)
-        expected_density = int(self.npoints / self.bs ** 2)
-        density_ratio = expected_density / local_density
+        local_pt_num = pts.shape[0]
+        local_density = max(int(local_pt_num / self.bs ** 2), 1)
+        pts_num_ratio = self.npoints / local_pt_num
 
         # Recompute mask with new block size if outside the tolerance.
-        if density_ratio > (1 + self.tolerance_percent / 100) or density_ratio < (1 - self.tolerance_percent / 100):
-            bs = sqrt(density_ratio) * self.bs
+        if (local_pt_num > (1 + self.tolerance_range[0] / 100) * self.npoints) or (local_pt_num < (1 - self.tolerance_range[1] / 100) * self.npoints):
+            bs = sqrt(pts_num_ratio) * self.bs
             mask = self.compute_mask(pt, bs)
             pts = self.xyzni[mask]
         else:
@@ -398,12 +398,12 @@ def train(args, dataset_dict, info_class):
     print("Creating dataloader and optimizer...", end="")
     ds_trn = PartDatasetTrainVal(filelist=dataset_dict['trn'], folder=args.rootdir, training=True, block_size=args.blocksize,
                                  npoints=args.npoints, iteration_number=args.batchsize * args.iter, features=features,
-                                 class_info=info_class['class_info'], tolerance_percent=args.tolerance, local_info=args.local_features)
+                                 class_info=info_class['class_info'], tolerance_range=args.tolerance, local_info=args.local_features)
     train_loader = torch.utils.data.DataLoader(ds_trn, batch_size=args.batchsize, shuffle=True, num_workers=args.num_workers)
 
     ds_val = PartDatasetTrainVal(filelist=dataset_dict['val'], folder=args.rootdir, training=False, block_size=args.blocksize,
                                  npoints=args.npoints, iteration_number=args.batchsize * args.val_iter, features=features,
-                                 class_info=info_class['class_info'], tolerance_percent=args.tolerance, local_info=args.local_features)
+                                 class_info=info_class['class_info'], tolerance_range=args.tolerance, local_info=args.local_features)
     val_loader = torch.utils.data.DataLoader(ds_val, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
 
     optimizer = torch.optim.Adam(net.parameters(), lr=float(args.lr))
