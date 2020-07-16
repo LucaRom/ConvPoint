@@ -257,7 +257,7 @@ class PartDatasetTrainVal():
         pts_num_ratio = self.npoints / local_pt_num
 
         # Recompute mask with new block size if outside the tolerance.
-        if (local_pt_num > (1 + self.tolerance_range[0] / 100) * self.npoints) or (local_pt_num < (1 - self.tolerance_range[1] / 100) * self.npoints):
+        if (local_pt_num > (1 + self.tolerance_range[1] / 100) * self.npoints) or (local_pt_num < (1 - self.tolerance_range[0] / 100) * self.npoints):
             bs = sqrt(pts_num_ratio) * self.bs
             mask = self.compute_mask(pt, bs)
             pts = self.xyzni[mask]
