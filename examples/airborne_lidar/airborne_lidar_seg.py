@@ -46,7 +46,7 @@ def parse_args():
                                                                       "Currently, only xyz and xyzni are supported for this dataset.")
     parser.add_argument("--local_features", default=True, help="Bool to use or not the local features of local density and bloc size. "
                                                                "They are computed for every bloc.")
-    parser.add_argument("--test_step", default=50, type=float)
+    parser.add_argument("--test_step", default=5, type=float)
     parser.add_argument("--test_labels", default=True, type=bool, help="Labels available for test dataset")
     parser.add_argument("--val_iter", default=200, type=int, help="Number of iterations at validation.")
     parser.add_argument("--nepochs", default=50, type=int)
@@ -296,15 +296,10 @@ class PartDatasetTest():
         self.npoints = npoints
         self.features = features
         self.step = test_step
-        self.islabels= labels
         self.h5file = self.folder / f"{self.filename}.hdfs"
         # load the points
         with h5py.File(self.h5file, 'r') as data_file:
             self.xyzni = data_file["xyzni"][:]
-            if self.islabels:
-                self.labels = data_file["labels"][:]
-            else:
-                self.labels = None
 
             discretized = ((self.xyzni[:, :2]).astype(float) / self.step).astype(int)
             self.pts = np.unique(discretized, axis=0)
@@ -314,17 +309,13 @@ class PartDatasetTest():
         if self.pts is None:
             with h5py.File(self.h5file, 'r') as data_file:
                 self.xyzni = data_file["xyzni"][:]
-                if self.islabels:
-                    self.labels = data_file["labels"][:]
-                else:
-                    self.labels = None
 
                 discretized = ((self.xyzni[:, :2]).astype(float) / self.step).astype(int)
                 self.pts = np.unique(discretized, axis=0)
                 self.pts = self.pts.astype(np.float) * self.step
-        # get the data
-        mask = self.compute_mask(self.pts[index], self.bs)
-        pts = self.xyzni[mask]
+
+        # get all points within block
+        pts, local_features = self.adapt_mask(self.pts[index])
 
         # choose right number of points
         choice = np.random.choice(pts.shape[0], self.npoints, replace=True)
@@ -348,14 +339,30 @@ class PartDatasetTest():
 
         return pts, fts, indices
 
+    def adapt_mask(self, pt):
+        # First computation of mask and selection of points.
+        mask = self.compute_mask(pt, self.bs)
+        pts = self.xyzni[mask]
+
+        # Check if total number of points in the first mask is within tolerance.
+        local_pt_num = pts.shape[0]
+        local_density = max(int(local_pt_num / self.bs ** 2), 1)
+        pts_num_ratio = self.npoints / local_pt_num
+
+        # Recompute mask with new block size if outside the tolerance.
+        if (local_pt_num > (1 + self.tolerance_range[1] / 100) * self.npoints) or (local_pt_num < (1 - self.tolerance_range[0] / 100) * self.npoints):
+            bs = sqrt(pts_num_ratio) * self.bs
+            mask = self.compute_mask(pt, bs)
+            pts = self.xyzni[mask]
+        else:
+            bs = self.bs
+
+        return pts, {'density': local_density, 'bs': bs}
+
     def __len__(self):
         if self.pts is None:
             with h5py.File(self.h5file, 'r') as data_file:
                 self.xyzni = data_file["xyzni"][:]
-                if self.islabels:
-                    self.labels = data_file["labels"][:]
-                else:
-                    self.labels = None
 
                 discretized = ((self.xyzni[:, :2]).astype(float) / self.step).astype(int)
                 self.pts = np.unique(discretized, axis=0)
