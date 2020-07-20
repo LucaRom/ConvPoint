@@ -12,8 +12,8 @@ import torch.utils.data
 from pathlib import Path
 from airborne_lidar_seg import get_model, nearest_correspondance, count_parameters, class_mode
 import laspy
-import h5py
 from airborne_lidar_utils import write_features
+from airborne_lidar_datasets import PartDatasetTest
 
 import yaml
 
@@ -23,7 +23,7 @@ def parse_args():
     parser.add_argument("--modeldir", default='/wspace/disk01/lidar/convpoint_tests/results/SegBig_8168_drop0_2020-03-12-07-47-46', type=str)
     parser.add_argument("--rootdir", default='/wspace/disk01/lidar/POINTCLOUD/data/', type=str,
                         help="Folder conntaining tst subfolder with las files.")
-    parser.add_argument("--test_step", default=15, type=float)
+    parser.add_argument("--test_step", default=5, type=float)
 
     args = parser.parse_args()
     config_dict = read_config_from_yaml(Path(args.modeldir))
@@ -95,76 +95,6 @@ def pred_to_asprs(pred, info_class):
     return labels2
 
 
-# Part dataset only for testing
-class PartDatasetTest():
-
-    def compute_mask(self, pt, bs):
-        # build the mask
-        mask_x = np.logical_and(self.xyzni[:, 0] < pt[0] + bs / 2, self.xyzni[:, 0] > pt[0] - bs / 2)
-        mask_y = np.logical_and(self.xyzni[:, 1] < pt[1] + bs / 2, self.xyzni[:, 1] > pt[1] - bs / 2)
-        mask = np.logical_and(mask_x, mask_y)
-        return mask
-
-    def __init__(self, in_file, block_size=8, npoints=8192, test_step=5, features=False):
-
-        self.filename = in_file
-        self.bs = block_size
-        self.npoints = npoints
-        self.features = features
-        self.step = test_step
-        self.xyzni= None
-        # load the points
-        if self.xyzni is None:
-            # load the points
-            with h5py.File(self.filename, 'r') as data_file:
-                self.xyzni = data_file["xyzni"][:]
-
-        discretized = ((self.xyzni[:, :2]).astype(float) / self.step).astype(int)
-        self.pts = np.unique(discretized, axis=0)
-        self.pts = self.pts.astype(np.float) * self.step
-
-    def __getitem__(self, index):
-        if self.xyzni is None:
-            # load the points
-            with h5py.File(self.filename, 'r') as data_file:
-                self.xyzni = data_file["xyzni"][:]
-        # get the data
-        mask = self.compute_mask(self.pts[index], self.bs)
-        pts = self.xyzni[mask]
-
-        # choose right number of points
-        choice = np.random.choice(pts.shape[0], self.npoints, replace=True)
-        pts = pts[choice]
-
-        # indices in the original point cloud
-        indices = np.where(mask)[0][choice]
-
-        # separate between features and points
-        if self.features is False:
-            fts = np.ones((pts.shape[0], 1))
-        else:
-            fts = pts[:, 3:]
-            fts = fts.astype(np.float32)
-
-        pts = pts[:, :3].copy()
-
-        pts = torch.from_numpy(pts).float()
-        fts = torch.from_numpy(fts).float()
-        indices = torch.from_numpy(indices).long()
-
-        return pts, fts, indices
-
-    def __len__(self):
-        if self.xyzni is None:
-            # load the points
-            with h5py.File(self.filename, 'r') as data_file:
-                self.xyzni = data_file["xyzni"][:]
-            discretized = ((self.xyzni[:, :2]).astype(float) / self.step).astype(int)
-            self.pts = np.unique(discretized, axis=0)
-            self.pts = self.pts.astype(np.float) * self.step
-        return len(self.pts)
-
-
 def test(args, filename, model_folder, info_class):
     nb_class = info_class['nb_class']
     # create the network
@@ -172,7 +102,7 @@ def test(args, filename, model_folder, info_class):
     if torch.cuda.is_available():
         state = torch.load(model_folder)
     else:
-        state = torch.load('/opt/ogc/ConvPoint/models/state_dict_dales.pth',map_location=torch.device('cpu'))
+        state = torch.load(model_folder, map_location=torch.device('cpu'))
     arg_dict = args.__dict__
     config_dict = state['args'].__dict__
     for key, value in config_dict.items():
@@ -186,15 +116,13 @@ def test(args, filename, model_folder, info_class):
         net.cpu()
     net.eval()
     print(f"Number of parameters in the model: {count_parameters(net):,}")
-    las_filename= filename
-    # for filename in flist_test:
-    print(filename)
-    filename0= Path(args.rootdir) / f"{filename}.las"
-    filename= write_las_to_h5(filename0)
+    print(f"Processing {filename}")
+    las_filename = Path(args.rootdir) / f"{filename}.las"
+    h5_filename = write_las_to_h5(Path(args.rootdir) / f"{filename}.las")
     out_folder = model_folder.parent / 'tst'
     out_folder.mkdir(exist_ok=True)
 
-    ds_tst = PartDatasetTest(filename, block_size=args.blocksize, npoints=args.npoints, test_step=args.test_step, features=features)
+    ds_tst = PartDatasetTest(h5_filename, block_size=args.blocksize, npoints=args.npoints, test_step=args.test_step, features=features)
     tst_loader = torch.utils.data.DataLoader(ds_tst, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
 
     xyz = ds_tst.xyzni[:, :3]
@@ -233,12 +161,10 @@ def test(args, filename, model_folder, info_class):
     scores = scores.argmax(1)
 
     # Save predictions
-
-    with laspy.file.File(filename0) as in_file:
+    with laspy.file.File(las_filename) as in_file:
         header = in_file.header
         xyz = np.vstack((in_file.x, in_file.y, in_file.z)).transpose()
-        write_to_las(out_folder / f"{las_filename}_predictions.las", xyz=xyz, pred=scores, header=header,
-                 info_class=info_class['class_info'])
+        write_to_las(out_folder / f"{filename}_predictions.las", xyz=xyz, pred=scores, header=header, info_class=info_class['class_info'])
 
 
 def main():
@@ -249,7 +175,7 @@ def main():
     base_dir = Path(args.rootdir)
     dataset_dict = []
 
-    for file in (base_dir).glob('*.las'):
+    for file in base_dir.glob('*.las'):
         dataset_dict.append(file.stem)
 
     if len(dataset_dict) == 0:

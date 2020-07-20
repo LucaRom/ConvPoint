@@ -1,18 +1,17 @@
 import h5py
-import os
-import warnings
 import yaml
 from mlflow import log_metric
+from pathlib import Path
 
 
 def tsv_line(*args):
     return '\t'.join(map(str, args)) + '\n'
 
 
-def write_features(file_name, xyzni, labels= None):
+def write_features(file_name, xyzni, labels=None):
     """write the geometric features, labels and clouds in a h5 file"""
-    if os.path.isfile(file_name):
-        os.remove(file_name)
+    if Path.is_file(file_name):
+        Path.unlink(file_name)
     data_file = h5py.File(file_name, 'w')
     data_file.create_dataset('xyzni', data=xyzni, dtype='float16')
     if labels is not None:
