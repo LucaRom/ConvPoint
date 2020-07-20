@@ -406,8 +406,6 @@ def main():
 
     # mlflow settings
     set_tracking_uri(args.mlruns_dir)
-    set_experiment('ConvPoint')
-    log_params(vars(args))
 
     # create the file lists (trn / val / tst)
     print("Create file list...")
@@ -425,13 +423,16 @@ def main():
 
     info_class = class_mode(args.mode)
     if args.test_model is None:
+        set_experiment('ConvPoint')
         # Train + Validate model
         model_folder = train(args, dataset_dict, info_class)
 
     else:
+        set_experiment('ConvPoint_test')
         # Test only
         model_folder = args.test_model
 
+    log_params(vars(args))
     # Test model
     if args.test:
         test(args, dataset_dict['tst'], model_folder, info_class)
