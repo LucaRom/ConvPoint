@@ -40,16 +40,16 @@ def parse_args():
     parser.add_argument("--tolerance", default=[5, 25], type=list,
                         help="Tolerance range (in %) of the difference between number of points expected (npoints) and total in block size."
                              "Outer tolerance, a new block size is calculated.")
-    parser.add_argument("--iter", default=500, type=int)
+    parser.add_argument("--iter", default=1, type=int)
     parser.add_argument("--num_workers", default=8, type=int)
     parser.add_argument("--features", default="xyzni", type=str, help="Features to process. xyzni means xyz + number of returns + intensity. "
                                                                       "Currently, only xyz and xyzni are supported for this dataset.")
     parser.add_argument("--local_features", default=True, help="Bool to use or not the local features of local density and bloc size. "
                                                                "They are computed for every bloc.")
-    parser.add_argument("--test_step", default=5, type=float)
+    parser.add_argument("--test_step", default=10, type=float)
     parser.add_argument("--test_labels", default=True, type=bool, help="Labels available for test dataset")
-    parser.add_argument("--val_iter", default=200, type=int, help="Number of iterations at validation.")
-    parser.add_argument("--nepochs", default=50, type=int)
+    parser.add_argument("--val_iter", default=1, type=int, help="Number of iterations at validation.")
+    parser.add_argument("--nepochs", default=1, type=int)
     parser.add_argument("--model", default="SegBig", type=str, help="SegBig is the only available model at this time, for this dataset.")
     parser.add_argument("--drop", default=0, type=float)
 
@@ -288,7 +288,7 @@ class PartDatasetTest():
         mask = np.logical_and(mask_x, mask_y)
         return mask
 
-    def __init__(self, filename, folder, block_size=8, npoints=8192, test_step=5, features=False, labels=True):
+    def __init__(self, filename, folder, block_size, npoints, test_step, features, tolerance, local_features):
 
         self.filename = filename
         self.folder = Path(folder)
@@ -296,10 +296,13 @@ class PartDatasetTest():
         self.npoints = npoints
         self.features = features
         self.step = test_step
+        self.tolerance_range = tolerance
+        self.local_info = local_features
         self.h5file = self.folder / f"{self.filename}.hdfs"
         # load the points
         with h5py.File(self.h5file, 'r') as data_file:
             self.xyzni = data_file["xyzni"][:]
+            self.labels = data_file['labels'][:]
 
             discretized = ((self.xyzni[:, :2]).astype(float) / self.step).astype(int)
             self.pts = np.unique(discretized, axis=0)
@@ -309,13 +312,14 @@ class PartDatasetTest():
         if self.pts is None:
             with h5py.File(self.h5file, 'r') as data_file:
                 self.xyzni = data_file["xyzni"][:]
+                self.labels = data_file['labels'][:]
 
                 discretized = ((self.xyzni[:, :2]).astype(float) / self.step).astype(int)
                 self.pts = np.unique(discretized, axis=0)
                 self.pts = self.pts.astype(np.float) * self.step
 
         # get all points within block
-        pts, local_features = self.adapt_mask(self.pts[index])
+        pts, local_info, mask = self.adapt_mask(self.pts[index])
 
         # choose right number of points
         choice = np.random.choice(pts.shape[0], self.npoints, replace=True)
@@ -324,12 +328,17 @@ class PartDatasetTest():
         # indices in the original point cloud
         indices = np.where(mask)[0][choice]
 
-        # separate between features and points
+        # Separate features from xyz
         if self.features is False:
             fts = np.ones((pts.shape[0], 1))
         else:
             fts = pts[:, 3:]
-            fts = fts.astype(np.float32)
+        if self.local_info:
+            dens = np.full(shape=(fts.shape[0], 1), fill_value=local_info['density'])
+            bs = np.full(shape=(fts.shape[0], 1), fill_value=local_info['bs'])
+            fts = np.hstack((fts, dens, bs))
+
+        fts = fts.astype(np.float32)
 
         pts = pts[:, :3].copy()
 
@@ -357,12 +366,13 @@ class PartDatasetTest():
         else:
             bs = self.bs
 
-        return pts, {'density': local_density, 'bs': bs}
+        return pts, {'density': local_density, 'bs': bs}, mask
 
     def __len__(self):
         if self.pts is None:
             with h5py.File(self.h5file, 'r') as data_file:
                 self.xyzni = data_file["xyzni"][:]
+                self.labels = data_file['labels'][:]
 
                 discretized = ((self.xyzni[:, :2]).astype(float) / self.step).astype(int)
                 self.pts = np.unique(discretized, axis=0)
@@ -525,6 +535,17 @@ def train(args, dataset_dict, info_class):
     return root_folder
 
 
+def format_classes(labels, class_info):
+    """Format labels array to match the classes of interest.
+    Labels with keys not defined in the coi dict will be set to 0.
+    """
+    labels2 = np.full(shape=labels.shape, fill_value=0, dtype=int)
+    for key, value in class_info.items():
+        labels2[labels == int(key)] = value['mode']
+
+    return labels2
+
+
 def test(args, flist_test, model_folder, info_class):
     nb_class = info_class['nb_class']
     # create the network
@@ -538,8 +559,8 @@ def test(args, flist_test, model_folder, info_class):
 
     for filename in flist_test:
         print(filename)
-        ds_tst = PartDatasetTest(filename, args.rootdir, block_size=args.blocksize,
-                                 npoints=args.npoints, test_step=args.test_step, features=features, labels=args.test_labels)
+        ds_tst = PartDatasetTest(filename, args.rootdir, block_size=args.blocksize, npoints=args.npoints, test_step=args.test_step,
+                                 features=features, tolerance=args.tolerance, local_features=args.local_features)
         tst_loader = torch.utils.data.DataLoader(ds_tst, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
 
         xyz = ds_tst.xyzni[:, :3]
@@ -579,7 +600,7 @@ def test(args, flist_test, model_folder, info_class):
         # Compute confusion matrix
         if args.test_labels:
             tst_logs = InformationLogger('tst')
-            lbl = ds_tst.labels[:, :]
+            lbl = format_classes(ds_tst.labels[:, :], class_info=info_class['class_info'])
 
             cm = confusion_matrix(lbl.ravel(), scores.ravel(), labels=list(range(nb_class)))
 
