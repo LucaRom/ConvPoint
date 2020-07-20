@@ -430,7 +430,7 @@ def main():
     else:
         set_experiment('ConvPoint_test')
         # Test only
-        model_folder = args.test_model
+        model_folder = Path(args.test_model)
 
     log_params(vars(args))
     # Test model
