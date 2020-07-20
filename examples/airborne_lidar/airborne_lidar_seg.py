@@ -25,34 +25,40 @@ from mlflow import log_params, set_tracking_uri, set_experiment
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--test", default=True)
-    parser.add_argument("--savepts", action="store_true")
+    # Read/write parameters
     parser.add_argument("--savedir",
                         default='/space/partner/nrcan/geobase/work/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/results', type=str)
     parser.add_argument("--rootdir",
                         default='/space/partner/nrcan/geobase/work/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/prepared', type=str)
-    parser.add_argument("--mlruns_dir", default='/space/partner/nrcan/geobase/work/transfer/work/deep_learning/mlflow/mlruns')
+    parser.add_argument("--mlruns_dir", default='/space/partner/nrcan/geobase/work/transfer/work/deep_learning/mlflow/mlruns', type=str)
+
+    # Hyperparameters
+    parser.add_argument("--model", default="SegBig", type=str, help="SegBig is the only available model at this time, for this dataset.")
+    parser.add_argument("--mode", default=2, type=int, help="Class mode. See class_mode function for more available options.")
+    parser.add_argument("--nepochs", default=1, type=int)
+    parser.add_argument("--drop", default=0, type=float)
+    parser.add_argument("--lr", default=1e-3, help="Learning rate")
     parser.add_argument("--batchsize", "-b", default=10, type=int)
     parser.add_argument("--npoints", default=8168, type=int, help="Number of points to be sampled in the block.")
     parser.add_argument("--blocksize", default=25, type=int, help="Size of the infinite vertical column, to be processed.")
     parser.add_argument("--tolerance", default=[5, 25], type=list,
                         help="Tolerance range (in %) of the difference between number of points expected (npoints) and total in block size."
                              "Outer tolerance, a new block size is calculated.")
-    parser.add_argument("--iter", default=1, type=int)
+    parser.add_argument("--trn_iter", default=1, type=int, help="Number of iterations during training.")
+    parser.add_argument("--val_iter", default=1, type=int, help="Number of iterations during validation.")
     parser.add_argument("--num_workers", default=8, type=int)
     parser.add_argument("--features", default="xyzni", type=str, help="Features to process. xyzni means xyz + number of returns + intensity. "
                                                                       "Currently, only xyz and xyzni are supported for this dataset.")
     parser.add_argument("--local_features", default=True, help="Bool to use or not the local features of local density and bloc size. "
                                                                "They are computed for every bloc.")
-    parser.add_argument("--test_step", default=10, type=float)
-    parser.add_argument("--test_labels", default=True, type=bool, help="Labels available for test dataset")
-    parser.add_argument("--val_iter", default=1, type=int, help="Number of iterations at validation.")
-    parser.add_argument("--nepochs", default=1, type=int)
-    parser.add_argument("--model", default="SegBig", type=str, help="SegBig is the only available model at this time, for this dataset.")
-    parser.add_argument("--drop", default=0, type=float)
 
-    parser.add_argument("--lr", default=1e-3, help="Learning rate")
-    parser.add_argument("--mode", default=2, type=int, help="Class mode. See class_mode function for more available options.")
+    # Test parameters.
+    parser.add_argument("--test", default=True)
+    parser.add_argument("--test_step", default=5, type=float)
+    parser.add_argument("--test_labels", default=True, type=bool, help="Labels available for test dataset")
+    parser.add_argument("--test_model", default=None, type=str, help="If provided, path to a folder containing a state_dict.pth, to run test only")
+    parser.add_argument("--savepts", action="store_true")
+
     args = parser.parse_args()
     return args
 
@@ -186,7 +192,7 @@ def train(args, dataset_dict, info_class):
 
     print("Creating dataloader and optimizer...", end="")
     ds_trn = PartDatasetTrainVal(filelist=dataset_dict['trn'], folder=args.rootdir, training=True, block_size=args.blocksize,
-                                 npoints=args.npoints, iteration_number=args.batchsize * args.iter, features=features,
+                                 npoints=args.npoints, iteration_number=args.batchsize * args.trn_iter, features=features,
                                  class_info=info_class['class_info'], tolerance_range=args.tolerance, local_info=args.local_features)
     train_loader = torch.utils.data.DataLoader(ds_trn, batch_size=args.batchsize, shuffle=True, num_workers=args.num_workers)
 
@@ -418,8 +424,14 @@ def main():
     print(f"Las files per dataset:\n Trn: {len(dataset_dict['trn'])} \n Val: {len(dataset_dict['val'])} \n Tst: {len(dataset_dict['tst'])}")
 
     info_class = class_mode(args.mode)
-    # Train + Validate model
-    model_folder = train(args, dataset_dict, info_class)
+    if args.test_model is None:
+        # Train + Validate model
+        model_folder = train(args, dataset_dict, info_class)
+
+    else:
+        # Test only
+        model_folder = args.test_model
+
     # Test model
     if args.test:
         test(args, dataset_dict['tst'], model_folder, info_class)
