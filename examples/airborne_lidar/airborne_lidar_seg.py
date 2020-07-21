@@ -320,7 +320,7 @@ def format_classes(labels, class_info):
     return labels2
 
 
-def test(args, flist_test, model_folder, info_class):
+def test(args, filename, model_folder, info_class):
     nb_class = info_class['nb_class']
     # create the network
     print("Creating network...")
@@ -331,74 +331,73 @@ def test(args, flist_test, model_folder, info_class):
     net.eval()
     print(f"Number of parameters in the model: {count_parameters(net):,}")
 
-    for filename in flist_test:
-        print(filename)
-        ds_tst = PartDatasetTest(filename, args.rootdir, block_size=args.blocksize, npoints=args.npoints, test_step=args.test_step,
-                                 features=features, tolerance=args.tolerance, local_features=args.local_features)
-        tst_loader = torch.utils.data.DataLoader(ds_tst, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
+    print(filename)
+    ds_tst = PartDatasetTest(filename, args.rootdir, block_size=args.blocksize, npoints=args.npoints, test_step=args.test_step,
+                             features=features, tolerance=args.tolerance, local_features=args.local_features)
+    tst_loader = torch.utils.data.DataLoader(ds_tst, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
 
-        xyz = ds_tst.xyzni[:, :3]
-        scores = np.zeros((xyz.shape[0], nb_class))
+    xyz = ds_tst.xyzni[:, :3]
+    scores = np.zeros((xyz.shape[0], nb_class))
 
-        total_time = 0
-        iter_nb = 0
-        with torch.no_grad():
-            t = tqdm(tst_loader, ncols=150)
-            for pts, features, indices in t:
-                t1 = time.time()
-                features = features.cuda()
-                pts = pts.cuda()
-                outputs = net(features, pts)
-                t2 = time.time()
+    total_time = 0
+    iter_nb = 0
+    with torch.no_grad():
+        t = tqdm(tst_loader, ncols=150)
+        for pts, features, indices in t:
+            t1 = time.time()
+            features = features.cuda()
+            pts = pts.cuda()
+            outputs = net(features, pts)
+            t2 = time.time()
 
-                outputs_np = outputs.cpu().numpy().reshape((-1, nb_class))
-                scores[indices.cpu().numpy().ravel()] += outputs_np
+            outputs_np = outputs.cpu().numpy().reshape((-1, nb_class))
+            scores[indices.cpu().numpy().ravel()] += outputs_np
 
-                iter_nb += 1
-                total_time += (t2 - t1)
-                t.set_postfix(time=f"{total_time / (iter_nb * args.batchsize):05e}")
+            iter_nb += 1
+            total_time += (t2 - t1)
+            t.set_postfix(time=f"{total_time / (iter_nb * args.batchsize):05e}")
 
-        mask = np.logical_not(scores.sum(1) == 0)
-        scores = scores[mask]
-        pts_src = xyz[mask]
+    mask = np.logical_not(scores.sum(1) == 0)
+    scores = scores[mask]
+    pts_src = xyz[mask]
 
-        # create the scores for all points
-        scores = nearest_correspondance(pts_src, xyz, scores, K=1)
+    # create the scores for all points
+    scores = nearest_correspondance(pts_src, xyz, scores, K=1)
 
-        # compute softmax
-        scores = scores - scores.max(axis=1)[:, None]
-        scores = np.exp(scores) / np.exp(scores).sum(1)[:, None]
-        scores = np.nan_to_num(scores)
-        scores = scores.argmax(1)
+    # compute softmax
+    scores = scores - scores.max(axis=1)[:, None]
+    scores = np.exp(scores) / np.exp(scores).sum(1)[:, None]
+    scores = np.nan_to_num(scores)
+    scores = scores.argmax(1)
 
-        # Compute confusion matrix
-        if args.test_labels:
-            tst_logs = InformationLogger('tst')
-            lbl = format_classes(ds_tst.labels[:, :], class_info=info_class['class_info'])
+    # Compute confusion matrix
+    if args.test_labels:
+        tst_logs = InformationLogger('tst')
+        lbl = format_classes(ds_tst.labels[:, :], class_info=info_class['class_info'])
 
-            cm = confusion_matrix(lbl.ravel(), scores.ravel(), labels=list(range(nb_class)))
+        cm = confusion_matrix(lbl.ravel(), scores.ravel(), labels=list(range(nb_class)))
 
-            cl_acc = metrics.stats_accuracy_per_class(cm)
-            cl_iou = metrics.stats_iou_per_class(cm)
-            cl_fscore = metrics.stats_f1score_per_class(cm)
+        cl_acc = metrics.stats_accuracy_per_class(cm)
+        cl_iou = metrics.stats_iou_per_class(cm)
+        cl_fscore = metrics.stats_f1score_per_class(cm)
 
-            print(f"Stats for test dataset:")
-            print_metric('Test', 'Accuracy', cl_acc)
-            print_metric('Test', 'iou', cl_iou)
-            print_metric('Test', 'F1-Score', cl_fscore)
-            tst_avg_score = {'loss': -1, 'acc': cl_acc[0], 'iou': cl_iou[0], 'fscore': [0]}
-            tst_class_score = {'acc': cl_acc[1], 'iou': cl_iou[1], 'fscore': cl_fscore[1]}
-            tst_logs.add_values(tst_avg_score, -1)
-            tst_logs.add_values(tst_class_score, -1, classwise=True)
+        print(f"Stats for test dataset:")
+        print_metric('Test', 'Accuracy', cl_acc)
+        print_metric('Test', 'iou', cl_iou)
+        print_metric('Test', 'F1-Score', cl_fscore)
+        tst_avg_score = {'loss': -1, 'acc': cl_acc[0], 'iou': cl_iou[0], 'fscore': [0]}
+        tst_class_score = {'acc': cl_acc[1], 'iou': cl_iou[1], 'fscore': cl_fscore[1]}
+        tst_logs.add_values(tst_avg_score, -1)
+        tst_logs.add_values(tst_class_score, -1, classwise=True)
 
-            # write error file.
-            # error2ply(model_folder / f"{filename}_error.ply", xyz=xyz, labels=lbl, prediction=scores, info_class=info_class['class_info'])
+        # write error file.
+        # error2ply(model_folder / f"{filename}_error.ply", xyz=xyz, labels=lbl, prediction=scores, info_class=info_class['class_info'])
 
-        if args.savepts:
-            # Save predictions
-            out_folder = model_folder / 'tst'
-            out_folder.mkdir(exist_ok=True)
-            prediction2ply(model_folder / f"{filename}_predictions.ply", xyz=xyz, prediction=scores, info_class=info_class['class_info'])
+    if args.savepts:
+        # Save predictions
+        out_folder = model_folder / 'tst'
+        out_folder.mkdir(exist_ok=True)
+        prediction2ply(model_folder / f"{filename}_predictions.ply", xyz=xyz, prediction=scores, info_class=info_class['class_info'])
 
 
 def main():
@@ -435,7 +434,8 @@ def main():
     log_params(vars(args))
     # Test model
     if args.test:
-        test(args, dataset_dict['tst'], model_folder, info_class)
+        for filename in dataset_dict['tst']:
+            test(args, filename, model_folder, info_class)
 
 
 if __name__ == '__main__':
