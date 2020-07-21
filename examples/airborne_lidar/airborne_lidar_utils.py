@@ -2,6 +2,7 @@ import h5py
 import yaml
 from mlflow import log_metric
 from pathlib import Path
+import warnings
 
 
 def tsv_line(*args):
@@ -32,7 +33,10 @@ class InformationLogger(object):
 
         else:
             for key, val in metrics.items():
-                log_metric(key=f"{self.mode}_{key}", value=float(val), step=epoch)
+                if type(val) is list:
+                    warnings.warn(f"Provided class metric value ({val}) is a list. Will not be able to process.")  # Sometimes happens. Don't know why
+                else:
+                    log_metric(key=f"{self.mode}_{key}", value=float(val), step=epoch)
 
 
 def print_metric(mode, metric, values):
