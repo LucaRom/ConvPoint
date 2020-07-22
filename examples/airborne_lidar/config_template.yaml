@@ -1,0 +1,27 @@
+global:
+  savedir: /space/partner/nrcan/geobase/work/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/results
+  rootdir: /space/partner/nrcan/geobase/work/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/prepared
+  mlruns_dir: /space/partner/nrcan/geobase/work/transfer/work/deep_learning/mlflow/mlruns
+
+training:
+  model: SegBig           # Curently the only model available.
+  mode: 2                 # Class mode. See class_mode function for more available options.
+  nepochs: 50
+  drop: 0
+  lr: 1e-3
+  batchsize: 10
+  npoints: 8168           # Number of points to be sampled in the block
+  blocksize: 25           # Size of the infinite vertical column, to be processed
+  tolerance: [5, 25]      # Tolerance range (in %) of the difference between number of points expected (npoints) and total in block size. Outer tolerance, a new block size is calculated.
+  trn_iter: 500           # Number of iterations during training.
+  val_iter: 200           # Number of iterations during validation.
+  num_workers: 8
+  features: xyzni         # Features to process. xyzni means xyz + number of returns + intensity.
+  local_features: True    # Bool to use or not the local features of local density and bloc size. They are computed for every bloc.
+
+test:
+  test: True
+  test_step: 5
+  test_labels: True       # Labels available for test dataset
+  test_model: None        # If provided, path to a folder containing a state_dict.pth, to run test only
+  savepts: False          # Bool to write predictions or not.

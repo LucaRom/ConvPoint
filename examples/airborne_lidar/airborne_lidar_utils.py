@@ -5,6 +5,18 @@ from pathlib import Path
 import warnings
 
 
+def read_parameters(param_file):
+    """Read and return parameters in .yaml file
+    Args:
+        param_file: Full file path of the parameters file
+    Returns:
+        YAML: CommentedMap dict-like object
+    """
+    with open(param_file) as yamlfile:
+        params = yaml.load(yamlfile)
+    return params
+
+
 def tsv_line(*args):
     return '\t'.join(map(str, args)) + '\n'
 
@@ -46,3 +58,23 @@ def print_metric(mode, metric, values):
 def write_config(folder, args):
     with open(folder / 'config.yaml', 'w') as outfile:
         yaml.dump(args, outfile, default_flow_style=False)
+
+
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
+
+# wrap blue / green
+def wblue(str):
+    return bcolors.OKBLUE + str + bcolors.ENDC
+
+
+def wgreen(str):
+    return bcolors.OKGREEN + str + bcolors.ENDC

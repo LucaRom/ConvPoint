@@ -16,7 +16,7 @@ import torch.utils.data
 import torch.nn.functional as F
 import convpoint.knn.lib.python.nearest_neighbors as nearest_neighbors
 import utils.metrics as metrics
-from examples.airborne_lidar.airborne_lidar_utils import InformationLogger, print_metric, write_config
+from examples.airborne_lidar.airborne_lidar_utils import InformationLogger, print_metric, write_config, read_parameters, wblue, wgreen
 from pathlib import Path
 from examples.airborne_lidar.airborne_lidar_viz import prediction2ply, error2ply
 from examples.airborne_lidar.airborne_lidar_datasets import PartDatasetTrainVal, PartDatasetTest
@@ -25,62 +25,10 @@ from mlflow import log_params, set_tracking_uri, set_experiment
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    # Read/write parameters
-    parser.add_argument("--savedir",
-                        default='/space/partner/nrcan/geobase/work/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/results', type=str)
-    parser.add_argument("--rootdir",
-                        default='/space/partner/nrcan/geobase/work/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/prepared', type=str)
-    parser.add_argument("--mlruns_dir", default='/space/partner/nrcan/geobase/work/transfer/work/deep_learning/mlflow/mlruns', type=str)
-
-    # Hyperparameters
-    parser.add_argument("--model", default="SegBig", type=str, help="SegBig is the only available model at this time, for this dataset.")
-    parser.add_argument("--mode", default=2, type=int, help="Class mode. See class_mode function for more available options.")
-    parser.add_argument("--nepochs", default=1, type=int)
-    parser.add_argument("--drop", default=0, type=float)
-    parser.add_argument("--lr", default=1e-3, help="Learning rate")
-    parser.add_argument("--batchsize", "-b", default=10, type=int)
-    parser.add_argument("--npoints", default=8168, type=int, help="Number of points to be sampled in the block.")
-    parser.add_argument("--blocksize", default=25, type=int, help="Size of the infinite vertical column, to be processed.")
-    parser.add_argument("--tolerance", default=[5, 25], type=list,
-                        help="Tolerance range (in %) of the difference between number of points expected (npoints) and total in block size."
-                             "Outer tolerance, a new block size is calculated.")
-    parser.add_argument("--trn_iter", default=1, type=int, help="Number of iterations during training.")
-    parser.add_argument("--val_iter", default=1, type=int, help="Number of iterations during validation.")
-    parser.add_argument("--num_workers", default=8, type=int)
-    parser.add_argument("--features", default="xyzni", type=str, help="Features to process. xyzni means xyz + number of returns + intensity. "
-                                                                      "Currently, only xyz and xyzni are supported for this dataset.")
-    parser.add_argument("--local_features", default=True, help="Bool to use or not the local features of local density and bloc size. "
-                                                               "They are computed for every bloc.")
-
-    # Test parameters.
-    parser.add_argument("--test", default=True)
-    parser.add_argument("--test_step", default=5, type=float)
-    parser.add_argument("--test_labels", default=True, type=bool, help="Labels available for test dataset")
-    parser.add_argument("--test_model", default=None, type=str, help="If provided, path to a folder containing a state_dict.pth, to run test only")
-    parser.add_argument("--savepts", action="store_true")
-
+    parser.add_argument("--config", default='./config_template.yaml', type=str)
     args = parser.parse_args()
+    args = read_parameters(args.config)
     return args
-
-
-class bcolors:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
-
-
-# wrap blue / green
-def wblue(str):
-    return bcolors.OKBLUE + str + bcolors.ENDC
-
-
-def wgreen(str):
-    return bcolors.OKGREEN + str + bcolors.ENDC
 
 
 def count_parameters(model):
@@ -160,24 +108,24 @@ Entit
 
 def get_model(nb_classes, args):
     # Select the model
-    if args.model == "SegBig":
+    if args['training']['model'] == "SegBig":
         from networks.network_seg import SegBig as Net
     else:
-        raise NotImplemented(f"The model {args.model} does not exist. Only SegBig is available at this time.")
+        raise NotImplemented(f"The model {args['training']['model']} does not exist. Only SegBig is available at this time.")
 
     # Number of features as input
-    if args.features == "xyzni":
+    if args['training']['features'] == "xyzni":
         input_channels = 2
         features = True
-        if args.local_features:
+        if args['training']['local_features']:
             input_channels = 4
-    elif args.features == "xyz":
+    elif args['training']['features'] == "xyz":
         input_channels = 1
         features = False
-        if args.local_features:
+        if args['training']['local_features']:
             input_channels = 3
     else:
-        raise NotImplemented(f"Features {args.features} are not supported. Only xyzni or xyz, at this time.")
+        raise NotImplemented(f"Features {args['training']['features']} are not supported. Only xyzni or xyz, at this time.")
 
     return Net(input_channels, output_channels=nb_classes, args=args), features
 
@@ -191,23 +139,30 @@ def train(args, dataset_dict, info_class):
     print(f"Number of parameters in the model: {count_parameters(net):,}")
 
     print("Creating dataloader and optimizer...", end="")
-    ds_trn = PartDatasetTrainVal(filelist=dataset_dict['trn'], folder=args.rootdir, training=True, block_size=args.blocksize,
-                                 npoints=args.npoints, iteration_number=args.batchsize * args.trn_iter, features=features,
-                                 class_info=info_class['class_info'], tolerance_range=args.tolerance, local_info=args.local_features)
-    train_loader = torch.utils.data.DataLoader(ds_trn, batch_size=args.batchsize, shuffle=True, num_workers=args.num_workers)
+    ds_trn = PartDatasetTrainVal(filelist=dataset_dict['trn'], folder=args['global']['rootdir'], training=True,
+                                 block_size=args['training']['blocksize'], npoints=args['training']['npoints'],
+                                 iteration_number=args['training']['batchsize'] * args['training']['trn_iter'], features=features,
+                                 class_info=info_class['class_info'], tolerance_range=args['training']['tolerance'],
+                                 local_info=args['training']['local_features'])
+    train_loader = torch.utils.data.DataLoader(ds_trn, batch_size=args['training']['batchsize'], shuffle=True,
+                                               num_workers=args['training']['num_workers'])
 
-    ds_val = PartDatasetTrainVal(filelist=dataset_dict['val'], folder=args.rootdir, training=False, block_size=args.blocksize,
-                                 npoints=args.npoints, iteration_number=args.batchsize * args.val_iter, features=features,
-                                 class_info=info_class['class_info'], tolerance_range=args.tolerance, local_info=args.local_features)
-    val_loader = torch.utils.data.DataLoader(ds_val, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
+    ds_val = PartDatasetTrainVal(filelist=dataset_dict['val'], folder=args['global']['rootdir'], training=False,
+                                 block_size=args['training']['blocksize'], npoints=args['training']['npoints'],
+                                 iteration_number=args['training']['batchsize'] * args['training']['val_iter'], features=features,
+                                 class_info=info_class['class_info'], tolerance_range=args['training']['tolerance'],
+                                 local_info=args['training']['local_features'])
+    val_loader = torch.utils.data.DataLoader(ds_val, batch_size=args['training']['batchsize'], shuffle=False,
+                                             num_workers=args['training']['num_workers'])
 
-    optimizer = torch.optim.Adam(net.parameters(), lr=float(args.lr))
+    optimizer = torch.optim.Adam(net.parameters(), lr=float(args['training']['lr']))
     print("done")
 
     # create the root folder
     print("Creating results folder...", end="")
     time_string = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
-    root_folder = Path(f"{args.savedir}/{args.model}_{args.npoints}_drop{args.drop}_{time_string}")
+    root_folder = Path(f"{args['global']['savedir']}/{args['training']['model']}_{args['training']['npoints']}_"
+                       f"mode{args['training']['mode']}_{time_string}")
     root_folder.mkdir(exist_ok=True)
     args_dict = vars(args)
     args_dict['data'] = dataset_dict
@@ -219,7 +174,7 @@ def train(args, dataset_dict, info_class):
     val_logs = InformationLogger('val')
 
     # iterate over epochs
-    for epoch in range(args.nepochs):
+    for epoch in range(args['training']['nepochs']):
 
         #######
         # training
@@ -332,9 +287,11 @@ def test(args, filename, model_folder, info_class):
     print(f"Number of parameters in the model: {count_parameters(net):,}")
 
     print(filename)
-    ds_tst = PartDatasetTest(filename, args.rootdir, block_size=args.blocksize, npoints=args.npoints, test_step=args.test_step,
-                             features=features, tolerance=args.tolerance, local_features=args.local_features)
-    tst_loader = torch.utils.data.DataLoader(ds_tst, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
+    ds_tst = PartDatasetTest(filename, args['global']['rootdir'], block_size=args['training']['blocksize'], npoints=args['training']['npoints'],
+                             test_step=args['training']['test_step'], features=features, tolerance=args['training']['tolerance'],
+                             local_features=args['training']['local_features'])
+    tst_loader = torch.utils.data.DataLoader(ds_tst, batch_size=args['training']['batchsize'], shuffle=False,
+                                             num_workers=args['training']['num_workers'])
 
     xyz = ds_tst.xyzni[:, :3]
     scores = np.zeros((xyz.shape[0], nb_class))
@@ -355,7 +312,7 @@ def test(args, filename, model_folder, info_class):
 
             iter_nb += 1
             total_time += (t2 - t1)
-            t.set_postfix(time=f"{total_time / (iter_nb * args.batchsize):05e}")
+            t.set_postfix(time=f"{total_time / (iter_nb * args['training']['batchsize']):05e}")
 
     mask = np.logical_not(scores.sum(1) == 0)
     scores = scores[mask]
@@ -371,7 +328,7 @@ def test(args, filename, model_folder, info_class):
     scores = scores.argmax(1)
 
     # Compute confusion matrix
-    if args.test_labels:
+    if args['test']['test_labels']:
         tst_logs = InformationLogger('tst')
         lbl = format_classes(ds_tst.labels[:, :], class_info=info_class['class_info'])
 
@@ -393,7 +350,7 @@ def test(args, filename, model_folder, info_class):
         # write error file.
         # error2ply(model_folder / f"{filename}_error.ply", xyz=xyz, labels=lbl, prediction=scores, info_class=info_class['class_info'])
 
-    if args.savepts:
+    if args['global']['savepts']:
         # Save predictions
         out_folder = model_folder / 'tst'
         out_folder.mkdir(exist_ok=True)
@@ -404,11 +361,11 @@ def main():
     args = parse_args()
 
     # mlflow settings
-    set_tracking_uri(args.mlruns_dir)
+    set_tracking_uri(args['global']['mlruns_dir'])
 
     # create the file lists (trn / val / tst)
     print("Create file list...")
-    base_dir = Path(args.rootdir)
+    base_dir = Path(args['global']['rootdir'])
     dataset_dict = {'trn': [], 'val': [], 'tst': []}
 
     for dataset in dataset_dict.keys():
@@ -420,8 +377,8 @@ def main():
 
     print(f"Las files per dataset:\n Trn: {len(dataset_dict['trn'])} \n Val: {len(dataset_dict['val'])} \n Tst: {len(dataset_dict['tst'])}")
 
-    info_class = class_mode(args.mode)
-    if args.test_model is None:
+    info_class = class_mode(args['training']['mode'])
+    if args['test']['test_model'] is None:
         set_experiment('ConvPoint')
         # Train + Validate model
         model_folder = train(args, dataset_dict, info_class)
@@ -429,11 +386,11 @@ def main():
     else:
         set_experiment('ConvPoint_test')
         # Test only
-        model_folder = Path(args.test_model)
+        model_folder = Path(args['test']['test_model'])
 
     log_params(vars(args))
     # Test model
-    if args.test:
+    if args['test']['test']:
         for filename in dataset_dict['tst']:
             test(args, filename, model_folder, info_class)
 
