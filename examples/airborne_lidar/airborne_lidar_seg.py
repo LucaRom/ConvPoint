@@ -164,9 +164,8 @@ def train(args, dataset_dict, info_class):
     root_folder = Path(f"{args['global']['savedir']}/{args['training']['model']}_{args['training']['npoints']}_"
                        f"mode{args['training']['mode']}_{time_string}")
     root_folder.mkdir(exist_ok=True)
-    args_dict = vars(args)
-    args_dict['data'] = dataset_dict
-    write_config(root_folder, args_dict)
+    args['data'] = dataset_dict
+    write_config(root_folder, args)
     print("done at", root_folder)
 
     # create the log file
@@ -378,6 +377,9 @@ def main():
     print(f"Las files per dataset:\n Trn: {len(dataset_dict['trn'])} \n Val: {len(dataset_dict['val'])} \n Tst: {len(dataset_dict['tst'])}")
 
     info_class = class_mode(args['training']['mode'])
+    log_params(args['global'])
+    log_params(args['training'])
+    log_params(args['test'])
     if args['test']['test_model'] is None:
         set_experiment('ConvPoint')
         # Train + Validate model
@@ -388,7 +390,6 @@ def main():
         # Test only
         model_folder = Path(args['test']['test_model'])
 
-    log_params(vars(args))
     # Test model
     if args['test']['test']:
         for filename in dataset_dict['tst']:
