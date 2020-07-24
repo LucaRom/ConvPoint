@@ -290,7 +290,7 @@ def test(args, filename, model_folder, info_class):
 
     print(filename)
     ds_tst = PartDatasetTest(filename, args['global']['rootdir'], block_size=args['training']['blocksize'], npoints=args['training']['npoints'],
-                             test_step=args['training']['test_step'], features=features, tolerance=args['training']['tolerance'],
+                             test_step=args['test']['test_step'], features=features, tolerance=args['training']['tolerance'],
                              local_features=args['training']['local_features'])
     tst_loader = torch.utils.data.DataLoader(ds_tst, batch_size=args['training']['batchsize'], shuffle=False,
                                              num_workers=args['training']['num_workers'])
