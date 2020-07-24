@@ -156,6 +156,7 @@ def train(args, dataset_dict, info_class):
                                              num_workers=args['training']['num_workers'])
 
     optimizer = torch.optim.Adam(net.parameters(), lr=float(args['training']['lr']))
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=args['training']['step_size'], gamma=args['training']['gamma'])
     print("done")
 
     # create the root folder
@@ -207,6 +208,8 @@ def train(args, dataset_dict, info_class):
             train_loss += loss.detach().cpu().item()
 
             t.set_postfix(OA=wblue(oa), AA=wblue(f"{acc[0]:.4f}"), IOU=wblue(f"{iou[0]:.4f}"), LOSS=wblue(f"{train_loss / cm.sum():.4e}"))
+
+        lr_scheduler.step()
         trn_logs.add_values({'loss': f"{train_loss / cm.sum():.4e}", 'iou': iou[0]}, epoch)
         trn_logs.add_values({'iou': iou[1]}, epoch, classwise=True)
 
