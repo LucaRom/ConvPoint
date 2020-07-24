@@ -7,3 +7,4 @@ lib
 convpoint_tests
 .laz
 .las
+config_velum.yaml
