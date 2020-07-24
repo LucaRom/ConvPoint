@@ -352,7 +352,7 @@ def test(args, filename, model_folder, info_class):
         # write error file.
         # error2ply(model_folder / f"{filename}_error.ply", xyz=xyz, labels=lbl, prediction=scores, info_class=info_class['class_info'])
 
-    if args['global']['savepts']:
+    if args['test']['savepts']:
         # Save predictions
         out_folder = model_folder / 'tst'
         out_folder.mkdir(exist_ok=True)
