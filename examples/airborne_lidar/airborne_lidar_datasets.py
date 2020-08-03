@@ -201,7 +201,7 @@ class PartDatasetTest():
         pts = self.xyzni[mask]
 
         # Check if total number of points in the first mask is within tolerance.
-        local_pt_num = pts.shape[0]
+        local_pt_num = max(pts.shape[0], 1)
         local_density = max(int(local_pt_num / self.bs ** 2), 1)
         pts_num_ratio = self.npoints / local_pt_num
 
