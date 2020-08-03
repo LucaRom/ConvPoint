@@ -13,7 +13,7 @@ def read_parameters(param_file):
         YAML: CommentedMap dict-like object
     """
     with open(param_file) as yamlfile:
-        params = yaml.load(yamlfile)
+        params = yaml.load(yamlfile, Loader=yaml.FullLoader)
     return params
 
 
