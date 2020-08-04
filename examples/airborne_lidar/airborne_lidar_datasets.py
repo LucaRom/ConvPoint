@@ -208,7 +208,7 @@ class PartDatasetTest():
         # Recompute mask with new block size if outside the tolerance.
         if (local_pt_num > (1 + int(self.tolerance_range[1]) / 100) * self.npoints) or \
                 (local_pt_num < (1 - int(self.tolerance_range[0]) / 100) * self.npoints):
-            bs = sqrt(pts_num_ratio) * self.bs
+            bs = max(sqrt(pts_num_ratio) * self.bs, 1)
             mask = compute_mask(self.xyzni, pt, bs)
             pts = self.xyzni[mask]
         else:
