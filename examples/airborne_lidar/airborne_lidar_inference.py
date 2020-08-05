@@ -184,7 +184,7 @@ def main():
     print(f"Las files in tst dataset: {len(dataset_dict)}")
 
     info_class = class_mode(args.mode)
-    model_folder = Path(args.modeldir)
+    model_folder = Path(args.modeldir).joinpath('state_dict.pth')
     for filename in dataset_dict:
         test(args, filename, model_folder, info_class)
 
