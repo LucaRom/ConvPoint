@@ -135,14 +135,14 @@ class PartDatasetTrainVal():
 # Part dataset only for testing
 class PartDatasetTest():
 
-    def __init__(self, filename, folder, block_size, npoints, test_step, features, tolerance, local_features):
+    def __init__(self, filename, folder, block_size, npoints, step, features, tolerance, local_features):
 
         self.filename = filename
         self.folder = Path(folder)
         self.bs = block_size
         self.npoints = npoints
         self.features = features
-        self.step = test_step
+        self.step = step
         self.tolerance_range = tolerance
         self.local_info = local_features
         self.h5file = self.folder / f"{self.filename}.hdfs"

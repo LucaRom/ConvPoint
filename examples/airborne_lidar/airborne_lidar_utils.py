@@ -2,7 +2,9 @@ import h5py
 import yaml
 from mlflow import log_metric
 from pathlib import Path
+import shutil
 import warnings
+import numpy as np
 
 
 def read_parameters(param_file):
@@ -29,6 +31,8 @@ def write_features(file_name, xyzni, labels=None):
     data_file.create_dataset('xyzni', data=xyzni, dtype='float16')
     if labels is not None:
         data_file.create_dataset('labels', data=labels, dtype='uint8')
+    else:
+        data_file.create_dataset('labels', data=np.zeros((1, 1)))
     data_file.close()
 
 
@@ -55,9 +59,8 @@ def print_metric(mode, metric, values):
     print(f"\n{mode} {metric}:\n  Overall: {values[0]:.3f}\n  Per class: {values[1]}")
 
 
-def write_config(folder, args):
-    with open(folder / 'config.yaml', 'w') as outfile:
-        yaml.dump(args, outfile, default_flow_style=False)
+def write_config(from_file, to_folder):
+    shutil.copy(str(from_file), f"{to_folder}/config.yaml")
 
 
 class bcolors:

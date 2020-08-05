@@ -12,33 +12,26 @@ import torch.utils.data
 from pathlib import Path
 from airborne_lidar_seg import get_model, nearest_correspondance, count_parameters, class_mode
 import laspy
-from airborne_lidar_utils import write_features
+from airborne_lidar_utils import write_features, read_parameters
 from airborne_lidar_datasets import PartDatasetTest
-
-import yaml
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--modeldir", default='/wspace/disk01/lidar/convpoint_tests/results/SegBig_8168_drop0_2020-03-12-07-47-46', type=str)
-    parser.add_argument("--rootdir", default='/wspace/disk01/lidar/POINTCLOUD/data/', type=str,
+    parser.add_argument("--modeldir", default='/wspace/disk01/lidar/convpoint_tests/results/SegBig_8168_drop0_2020-07-17-13-35-46', type=str)
+    parser.add_argument("--rootdir", default='/wspace/disk01/lidar/POINTCLOUD/tst/', type=str,
                         help="Folder conntaining tst subfolder with las files.")
     parser.add_argument("--test_step", default=5, type=float)
 
     args = parser.parse_args()
-    config_dict = read_config_from_yaml(Path(args.modeldir))
-    arg_dict = args.__dict__
-    for key, value in config_dict.items():
-        if key not in ['rootdir', 'test_step']:
-            arg_dict[key] = value
-
+    data_dir = args.rootdir
+    model_dir = args.modeldir
+    test_step = args.test_step
+    args = read_parameters(Path(model_dir).joinpath('config.yaml'))
+    args['global']['data_dir'] = data_dir
+    args['global']['model_dir'] = model_dir
+    args['test']['test_step'] = test_step
     return args
-
-
-def read_config_from_yaml(folder):
-    with open(folder / 'config.yaml', 'r') as in_file:
-        yaml_dict = yaml.load(in_file, Loader=yaml.FullLoader)
-    return yaml_dict
 
 
 def read_las_format(in_file):
@@ -71,9 +64,9 @@ def write_las_to_h5(filename):
     with laspy.file.File(filename) as in_file:
         xyzni = read_las_format(in_file)
 
-        filename = f"{filename.parent / filename.name.split('.')[0]}_prepared.hdfs"
+        filename = Path(f"{filename.parent / filename.name.split('.')[0]}_prepared.hdfs")
         write_features(filename, xyzni=xyzni)
-        return filename
+        return filename.parent / filename.stem
 
 
 def write_to_las(filename, xyz, pred, header, info_class):
@@ -95,19 +88,16 @@ def pred_to_asprs(pred, info_class):
     return labels2
 
 
-def test(args, filename, model_folder, info_class):
+def test(args, filename, info_class):
+    model_folder = Path(args['global']['model_dir'])
+    data_dir = Path(args['global']['data_dir'])
     nb_class = info_class['nb_class']
     # create the network
     print("Creating network...")
     if torch.cuda.is_available():
-        state = torch.load(model_folder)
+        state = torch.load(model_folder.joinpath('state_dict.pth'))
     else:
-        state = torch.load(model_folder, map_location=torch.device('cpu'))
-    arg_dict = args.__dict__
-    config_dict = state['args'].__dict__
-    for key, value in config_dict.items():
-        if key not in ['rootdir', 'num_workers', 'batchsize']:
-            arg_dict[key] = value
+        state = torch.load(model_folder.joinpath('state_dict.pth'), map_location=torch.device('cpu'))
     net, features = get_model(nb_class, args)
     net.load_state_dict(state['state_dict'])
     if torch.cuda.is_available():
@@ -117,13 +107,16 @@ def test(args, filename, model_folder, info_class):
     net.eval()
     print(f"Number of parameters in the model: {count_parameters(net):,}")
     print(f"Processing {filename}")
-    las_filename = Path(args.rootdir) / f"{filename}.las"
-    h5_filename = write_las_to_h5(Path(args.rootdir) / f"{filename}.las")
+    las_filename = data_dir / f"{filename}.las"
+    h5_filename = write_las_to_h5(Path(args['global']['data_dir']) / f"{filename}.las")
     out_folder = model_folder.parent / 'tst'
     out_folder.mkdir(exist_ok=True)
 
-    ds_tst = PartDatasetTest(h5_filename, block_size=args.blocksize, npoints=args.npoints, test_step=args.test_step, features=features)
-    tst_loader = torch.utils.data.DataLoader(ds_tst, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
+    ds_tst = PartDatasetTest(h5_filename, folder=data_dir,  block_size=args['training']['blocksize'], npoints=args['training']['npoints'],
+                             step=args['test']['test_step'], features=features, tolerance=args['training']['tolerance'],
+                             local_features=args['training']['local_features'])
+    tst_loader = torch.utils.data.DataLoader(ds_tst, batch_size=args['training']['batchsize'], shuffle=False,
+                                             num_workers=args['training']['num_workers'])
 
     xyz = ds_tst.xyzni[:, :3]
     scores = np.zeros((xyz.shape[0], nb_class))
@@ -145,7 +138,7 @@ def test(args, filename, model_folder, info_class):
 
             iter_nb += 1
             total_time += (t2 - t1)
-            t.set_postfix(time=f"{total_time / (iter_nb * args.batchsize):05e}")
+            t.set_postfix(time=f"{total_time / (iter_nb * args['training']['batchsize']):05e}")
 
     mask = np.logical_not(scores.sum(1) == 0)
     scores = scores[mask]
@@ -172,21 +165,21 @@ def main():
 
     # create the file lists (trn / val / tst)
     print("Create file list...")
-    base_dir = Path(args.rootdir)
+    data_dir = Path(args['global']['data_dir'])
     dataset_dict = []
 
-    for file in base_dir.glob('*.las'):
+    for file in data_dir.glob('*.las'):
         dataset_dict.append(file.stem)
 
     if len(dataset_dict) == 0:
-        warnings.warn(f"{base_dir} is empty")
+        warnings.warn(f"{data_dir} is empty")
 
     print(f"Las files in tst dataset: {len(dataset_dict)}")
 
-    info_class = class_mode(args.mode)
-    model_folder = Path(args.modeldir).joinpath('state_dict.pth')
+    info_class = class_mode(args['training']['mode'])
+    # model_folder = Path(args['global']['modeldir'])
     for filename in dataset_dict:
-        test(args, filename, model_folder, info_class)
+        test(args, filename, info_class)
 
 
 if __name__ == '__main__':

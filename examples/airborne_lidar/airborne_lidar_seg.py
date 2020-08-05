@@ -28,6 +28,7 @@ def parse_args():
     parser.add_argument("--config", default='./config_template.yaml', type=str)
     args = parser.parse_args()
     args = read_parameters(args.config)
+    args['global']['config_file'] = args.config
     return args
 
 
@@ -166,7 +167,7 @@ def train(args, dataset_dict, info_class):
                        f"mode{args['training']['mode']}_{time_string}")
     root_folder.mkdir(exist_ok=True)
     args['data'] = dataset_dict
-    write_config(root_folder, args)
+    write_config(args['global']['config_file'], root_folder)
     print("done at", root_folder)
 
     # create the log file
@@ -290,7 +291,7 @@ def test(args, filename, model_folder, info_class, file_idx):
 
     print(filename)
     ds_tst = PartDatasetTest(filename, args['global']['rootdir'], block_size=args['training']['blocksize'], npoints=args['training']['npoints'],
-                             test_step=args['test']['test_step'], features=features, tolerance=args['training']['tolerance'],
+                             step=args['test']['test_step'], features=features, tolerance=args['training']['tolerance'],
                              local_features=args['training']['local_features'])
     tst_loader = torch.utils.data.DataLoader(ds_tst, batch_size=args['training']['batchsize'], shuffle=False,
                                              num_workers=args['training']['num_workers'])
@@ -361,7 +362,6 @@ def test(args, filename, model_folder, info_class, file_idx):
 
 def main():
     args = parse_args()
-
     # mlflow settings
     set_tracking_uri(args['global']['mlruns_dir'])
 
