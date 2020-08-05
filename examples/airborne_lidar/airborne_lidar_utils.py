@@ -36,19 +36,19 @@ class InformationLogger(object):
     def __init__(self, mode):
         self.mode = mode
 
-    def add_values(self, metrics, epoch, classwise=False):
+    def add_values(self, metrics, step, classwise=False):
         """Add new information to the logs."""
         if classwise:
             for key, val in metrics.items():
                 for cls in val:
-                    log_metric(key=f"{self.mode}_{key}_{list(val).index(cls)}", value=float(cls), step=epoch)
+                    log_metric(key=f"{self.mode}_{key}_{list(val).index(cls)}", value=float(cls), step=step)
 
         else:
             for key, val in metrics.items():
                 if type(val) is list:
                     warnings.warn(f"Provided class metric value ({val}) is a list. Will not be able to process.")  # Sometimes happens. Don't know why
                 else:
-                    log_metric(key=f"{self.mode}_{key}", value=float(val), step=epoch)
+                    log_metric(key=f"{self.mode}_{key}", value=float(val), step=step)
 
 
 def print_metric(mode, metric, values):

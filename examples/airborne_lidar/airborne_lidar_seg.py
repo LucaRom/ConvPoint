@@ -277,7 +277,7 @@ def format_classes(labels, class_info):
     return labels2
 
 
-def test(args, filename, model_folder, info_class):
+def test(args, filename, model_folder, info_class, file_idx):
     nb_class = info_class['nb_class']
     # create the network
     print("Creating network...")
@@ -346,8 +346,8 @@ def test(args, filename, model_folder, info_class):
         print_metric('Test', 'F1-Score', cl_fscore)
         tst_avg_score = {'loss': -1, 'acc': cl_acc[0], 'iou': cl_iou[0], 'fscore': [0]}
         tst_class_score = {'acc': cl_acc[1], 'iou': cl_iou[1], 'fscore': cl_fscore[1]}
-        tst_logs.add_values(tst_avg_score, -1)
-        tst_logs.add_values(tst_class_score, -1, classwise=True)
+        tst_logs.add_values(tst_avg_score, file_idx)
+        tst_logs.add_values(tst_class_score, file_idx, classwise=True)
 
         # write error file.
         # error2ply(model_folder / f"{filename}_error.ply", xyz=xyz, labels=lbl, prediction=scores, info_class=info_class['class_info'])
@@ -380,9 +380,6 @@ def main():
     print(f"Las files per dataset:\n Trn: {len(dataset_dict['trn'])} \n Val: {len(dataset_dict['val'])} \n Tst: {len(dataset_dict['tst'])}")
 
     info_class = class_mode(args['training']['mode'])
-    log_params(args['global'])
-    log_params(args['training'])
-    log_params(args['test'])
     if args['test']['test_model'] is None:
         set_experiment('ConvPoint')
         # Train + Validate model
@@ -393,10 +390,14 @@ def main():
         # Test only
         model_folder = Path(args['test']['test_model'])
 
+    log_params(args['global'])
+    log_params(args['training'])
+    log_params(args['test'])
+
     # Test model
     if args['test']['test']:
         for filename in dataset_dict['tst']:
-            test(args, filename, model_folder, info_class)
+            test(args, filename, model_folder, info_class, dataset_dict['tst'].index(filename))
 
 
 if __name__ == '__main__':
