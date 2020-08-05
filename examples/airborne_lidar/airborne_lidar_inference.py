@@ -10,9 +10,10 @@ import time
 import torch
 import torch.utils.data
 from pathlib import Path
+from collections import OrderedDict
 from airborne_lidar_seg import get_model, nearest_correspondance, count_parameters, class_mode
 import laspy
-from airborne_lidar_utils import write_features, read_parameters
+from airborne_lidar_utils import write_features, read_parameters, gpu_stats
 from airborne_lidar_datasets import PartDatasetTest
 
 
@@ -138,7 +139,10 @@ def test(args, filename, info_class):
 
             iter_nb += 1
             total_time += (t2 - t1)
-            t.set_postfix(time=f"{total_time / (iter_nb * args['training']['batchsize']):05e}")
+            res, mem = gpu_stats()
+            t.set_postfix(OrderedDict(gpu_perc=f'{res.gpu} %',
+                                      gpu_RAM=f'{mem.used / (1024 ** 2):.0f}/{mem.total / (1024 ** 2):.0f} MiB',
+                                      time=f"{total_time / (iter_nb * args['training']['batchsize']):05e}"))
 
     mask = np.logical_not(scores.sum(1) == 0)
     scores = scores[mask]

@@ -6,6 +6,24 @@ import shutil
 import warnings
 import numpy as np
 
+try:
+    from pynvml import *
+except ModuleNotFoundError:
+    warnings.warn(f"The python Nvidia management library could not be imported. Ignore if running on CPU only.")
+
+
+def gpu_stats(device=0):
+    """
+    Provides GPU utilization (%) and RAM usage
+    :return: res.gpu, res.memory
+    """
+    nvmlInit()
+    handle = nvmlDeviceGetHandleByIndex(device)
+    res = nvmlDeviceGetUtilizationRates(handle)
+    mem = nvmlDeviceGetMemoryInfo(handle)
+
+    return res, mem
+
 
 def read_parameters(param_file):
     """Read and return parameters in .yaml file
