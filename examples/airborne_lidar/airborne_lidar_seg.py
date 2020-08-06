@@ -27,8 +27,9 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default='./config_template.yaml', type=str)
     args = parser.parse_args()
-    args = read_parameters(args.config)
-    args['global']['config_file'] = args.config
+    conf = args.config
+    args = read_parameters(conf)
+    args['global']['config_file'] = conf
     return args
 
 
