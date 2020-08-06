@@ -110,7 +110,7 @@ def test(args, filename, info_class):
     print(f"Processing {filename}")
     las_filename = data_dir / f"{filename}.las"
     h5_filename = write_las_to_h5(Path(args['global']['data_dir']) / f"{filename}.las")
-    out_folder = model_folder.parent / 'tst'
+    out_folder = model_folder / 'tst'
     out_folder.mkdir(exist_ok=True)
 
     ds_tst = PartDatasetTest(h5_filename, folder=data_dir,  block_size=args['training']['blocksize'], npoints=args['training']['npoints'],
