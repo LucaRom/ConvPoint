@@ -90,7 +90,7 @@ def main():
             path_prepare_label = Path(args.dest, dst)
             path_prepare_label.mkdir(exist_ok=True)
 
-            xyzni, label, nb_pts = read_las_format(base_dir / elem)
+            xyzni, label, nb_pts = read_las_format(base_dir / f"{elem}.las")
 
             write_features(f"{path_prepare_label / elem.split('.')[0]}_prepared.hdfs", xyzni=xyzni, labels=label)
             print(f"File {dst}/{elem} prepared. {nb_pts:,} points written.")
