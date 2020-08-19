@@ -2,6 +2,7 @@ global:
   savedir: /space/partner/nrcan/geobase/work/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/results
   rootdir: /space/partner/nrcan/geobase/work/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/prepared
   mlruns_dir: /space/partner/nrcan/geobase/work/transfer/work/deep_learning/mlflow/mlruns
+  exp_name: ConvPoint     # MLFlow experiment name
 
 training:
   model: SegBig           # Currently the only model available.
@@ -20,6 +21,7 @@ training:
   num_workers: 8
   features: xyzni         # Features to process. xyzni means xyz + number of returns + intensity.
   local_features: True    # Bool to use or not the local features of local density and bloc size. They are computed for every bloc.
+  finetune:               # If provided, path to a state dict to be used as pretraining weights.
 
 test:
   test: True

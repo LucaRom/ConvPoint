@@ -129,7 +129,14 @@ def get_model(nb_classes, args):
     else:
         raise NotImplemented(f"Features {args['training']['features']} are not supported. Only xyzni or xyz, at this time.")
 
-    return Net(input_channels, output_channels=nb_classes, args=args), features
+    net = Net(input_channels, output_channels=nb_classes, args=args)
+
+    # Using pretrained model.
+    if args['training']['finetune']:
+        state = torch.load(args['training']['finetune'])
+        net.load_state_dict(state['state_dict'], strict=False)
+
+    return net, features
 
 
 def train(args, dataset_dict, info_class):
