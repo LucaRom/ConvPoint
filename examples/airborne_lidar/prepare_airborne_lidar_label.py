@@ -9,6 +9,7 @@ import warnings
 import laspy
 from pathlib import Path
 from airborne_lidar_utils import write_features
+import csv
 
 
 def parse_args():
@@ -18,8 +19,25 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--folder', '-f', default='/export/sata01/wspace/lidar/POINTCLOUD/data/', help='Path to data folder')
     parser.add_argument("--dest", '-d', default='/export/sata01/wspace/lidar/convpoint_tests/prepared', help='Path to destination folder')
+    parser.add_argument("--csv", default='/wspace/disk01/lidar/ERD_2018_aoi1.csv', help='Path to the csv file describing relationship between '
+                                                                                        'lasfiles and the dataset in which they will be use.')
     args = parser.parse_args()
     return args
+
+
+def read_csv(csv_file_name):
+    """Open csv file and parse it, returning a list of dict.
+        - las_name
+        - dataset
+    """
+
+    dataset_dict = {'trn': [], 'val': [], 'tst': []}
+    with open(csv_file_name, 'r') as f:
+        reader = csv.reader(f)
+        for row in reader:
+            dataset_dict[row[1]].append(row[0])
+
+    return dataset_dict
 
 
 def read_las_format(raw_path, normalize=True):
@@ -37,15 +55,13 @@ def read_las_format(raw_path, normalize=True):
 
     if normalize:
         # Converting data to relative xyz reference system.
-        min_lbs= np.min(labels)
-        max_lbs= np.max(labels)
-        mask= (labels >= 0)
-        x= x[mask].reshape((-1,1))
-        y = y[mask].reshape((-1,1))
-        z = z[mask].reshape((-1,1))
-        intensity = intensity[mask].reshape((-1,1))
-        nb_return = nb_return[mask].reshape((-1,1))
-        labels = labels[mask].reshape((-1,1))
+        mask = (labels >= 0)
+        x = x[mask].reshape((-1, 1))
+        y = y[mask].reshape((-1, 1))
+        z = z[mask].reshape((-1, 1))
+        intensity = intensity[mask].reshape((-1, 1))
+        nb_return = nb_return[mask].reshape((-1, 1))
+        labels = labels[mask].reshape((-1, 1))
         norm_x = x - np.min(x)
         norm_y = y - np.min(y)
         norm_z = z - np.min(z)
@@ -61,17 +77,10 @@ def read_las_format(raw_path, normalize=True):
 
 def main():
     args = parse_args()
+    dataset_dict = read_csv(args.csv)
     base_dir = Path(args.folder)
 
-    dataset_dict = {'trn': [], 'val': [], 'tst': []}
-
     # List .las files in each dataset.
-    for dataset in dataset_dict.keys():
-        for file in (base_dir / dataset).glob('*.las'):
-            dataset_dict[dataset].append(file.name)
-        if len(dataset_dict[dataset]) == 0:
-            warnings.warn(f"{base_dir / dataset} is empty")
-
     print(f"Las files per dataset:\n Trn: {len(dataset_dict['trn'])} \n Val: {len(dataset_dict['val'])} \n Tst: {len(dataset_dict['tst'])}")
 
     # Write new hdfs of XYZ + number of return + intensity, with labels.
@@ -81,7 +90,7 @@ def main():
             path_prepare_label = Path(args.dest, dst)
             path_prepare_label.mkdir(exist_ok=True)
 
-            xyzni, label, nb_pts = read_las_format(base_dir / dst / elem)
+            xyzni, label, nb_pts = read_las_format(base_dir / elem)
 
             write_features(f"{path_prepare_label / elem.split('.')[0]}_prepared.hdfs", xyzni=xyzni, labels=label)
             print(f"File {dst}/{elem} prepared. {nb_pts:,} points written.")
