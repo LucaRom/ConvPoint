@@ -1,34 +1,19 @@
 # ConvPoint: Generalizing discrete convolutions for unstructured point clouds
 
-
-![SnapNet products](./doc/convPoint.png)
-
-
-## Updates
-
-**Major performance update**: by reformulating the convolutional layer using matrix mulitplications, the memory consumption has been highly reduced.
-
-**Major interface update**: the spatial relations are now computed in the network class. The framework is then easier to use and more flexible.
-
 ## Introduction
 
-This repository propose python scripts for point cloud classification and segmentation. The library is coded with PyTorch.
-
-The conference paper is here:
-https://diglib.eg.org/handle/10.2312/3dor20191064
-
-A preprint of the paper can be found on Arxiv:  
-http://arxiv.org/abs/1904.02375
+This repository was forked from the [original repo](https://github.com/aboulch/ConvPoint).  
+Python scripts for point cloud classification and segmentation. The library is coded with PyTorch.  
+It has been updated to fit the case of airborne lidar classification. 
 
 ## License
 
-Code is released under dual license depending on applications, research or commercial. Reseach license is GPLv3.
+Code is released under dual license depending on applications, research or commercial. Reseach and non-commercial license is GPLv3.
 See the [license](LICENSE.md).
 
 ## Citation
 
-If you use this code in your research, please consider citing:
-(citation will be updated as soon as 3DOR proceedings will be released)
+If you use this code in your research, please consider citing the original author:
 
 ```
 @inproceedings {or.20191064,
@@ -50,8 +35,9 @@ The code was tested on Ubuntu 18.04 with Anaconda.
 ## Dependencies
 
 - Pytorch
-- Scikit-learn for confusion matrix computation, and efficient neighbors search  
-- TQDM for progress bars
+- MLFlow
+- Scikit-learn
+- TQDM
 - PlyFile
 - H5py
 - Cython
@@ -86,10 +72,17 @@ from global_tags import GlobalTags
 GlobalTags.legacy_layer_base(True)
 ```
 
-## Examples
-* [ModelNet40](examples/modelnet/)
-* [ShapeNet](examples/shapenet/)
-* [S3DIS](examples/s3dis/)
-* [Semantic3D](examples/semantic3d)
-* [NPM3D](examples/npm3d)
-* [Airborne Lidar](examples/airborne_lidar)
+## Usage
+Step 1: Prepare las files.  
+```
+python airborne_lidar/prepare_airborne_lidar_label.py --folder /path/to/las/folder --dest path/to/input/folder --csv file.csv
+```
+Step 2: Prepare a config file and train a model.  
+A config file template can be found [here](airborne_lidar/config_template.yaml).
+```
+python airborne_lidar/airborne_lidar_seg.py --config /path/to/config.yaml
+```
+Step 3: Inference on new las files.
+```
+python airborne_lidar/airborne_lidar_inference.py --modeldir /path/to/model/folder --rootdir path/to/input/las --test_step int
+```  
