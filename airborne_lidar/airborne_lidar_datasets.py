@@ -41,7 +41,7 @@ class PartDatasetTrainVal():
         self.folder = Path(folder)
         self.training = training
         self.bs = block_size
-        self.npoints = npoints
+        # self.npoints = npoints
         self.iterations = iteration_number
         self.features = features
         self.class_info = class_info
@@ -67,12 +67,21 @@ class PartDatasetTrainVal():
         pt = self.xyzni[pt_id, :3]
 
         # Create the mask and select all points in the column.
-        pts, lbs, local_info = self.adapt_mask(pt)
+        # /// pts, lbs, local_info = self.adapt_mask(pt)
+        mask = compute_mask(self.xyzni, pt, self.bs)
+        pts = self.xyzni[mask]
+        lbs = self.labels[mask]
 
         # Random selection of npoints in the masked points
-        choice = np.random.choice(pts.shape[0], self.npoints, replace=True)
-        pts = pts[choice]
-        lbs = lbs[choice]
+        # choice = np.random.choice(pts.shape[0], self.npoints, replace=True)
+        # pts = pts[choice]
+        # lbs = lbs[choice]
+
+        # Condition pour eviter les trop gros pt cloud.
+        if pts.shape[0] > 65000:
+            choice = np.random.choice(pts.shape[0], 65000, replace=True)
+            pts = pts[choice]
+            lbs = lbs[choice]
 
         # Separate features from xyz
         if self.features is False:
@@ -80,8 +89,10 @@ class PartDatasetTrainVal():
         else:
             features = pts[:, 3:]
         if self.local_info:
-            dens = np.full(shape=(features.shape[0], 1), fill_value=local_info['density'])
-            bs = np.full(shape=(features.shape[0], 1), fill_value=local_info['bs'])
+            # dens = np.full(shape=(features.shape[0], 1), fill_value=local_info['density'])
+            # bs = np.full(shape=(features.shape[0], 1), fill_value=local_info['bs'])
+            dens = np.full(shape=(features.shape[0], 1), fill_value=1)
+            bs = np.full(shape=(features.shape[0], 1), fill_value=1)
             features = np.hstack((features, dens, bs))
 
         features = features.astype(np.float32)
@@ -100,26 +111,26 @@ class PartDatasetTrainVal():
     def __len__(self):
         return self.iterations
 
-    def adapt_mask(self, pt):
-        # First computation of mask and selection of points.
-        mask = compute_mask(self.xyzni, pt, self.bs)
-        pts = self.xyzni[mask]
-
-        # Check if total number of points in the first mask is within tolerance.
-        local_pt_num = pts.shape[0]
-        local_density = max(int(local_pt_num / self.bs ** 2), 1)
-        pts_num_ratio = self.npoints / local_pt_num
-
-        # Recompute mask with new block size if outside the tolerance.
-        if (local_pt_num > (1 + int(self.tolerance_range[1]) / 100) * self.npoints) or (local_pt_num < (1 - int(self.tolerance_range[0]) / 100) * self.npoints):
-            bs = sqrt(pts_num_ratio) * self.bs
-            mask = compute_mask(self.xyzni, pt, bs)
-            pts = self.xyzni[mask]
-        else:
-            bs = self.bs
-
-        lbs = self.labels[mask]
-        return pts, lbs, {'density': local_density, 'bs': bs}
+    # def adapt_mask(self, pt):
+    #     # First computation of mask and selection of points.
+    #     mask = compute_mask(self.xyzni, pt, self.bs)
+    #     pts = self.xyzni[mask]
+    #
+    #     # Check if total number of points in the first mask is within tolerance.
+    #     local_pt_num = pts.shape[0]
+    #     local_density = max(int(local_pt_num / self.bs ** 2), 1)
+    #     pts_num_ratio = self.npoints / local_pt_num
+    #
+    #     # Recompute mask with new block size if outside the tolerance.
+    #     if (local_pt_num > (1 + int(self.tolerance_range[1]) / 100) * self.npoints) or (local_pt_num < (1 - int(self.tolerance_range[0]) / 100) * self.npoints):
+    #         bs = sqrt(pts_num_ratio) * self.bs
+    #         mask = compute_mask(self.xyzni, pt, bs)
+    #         pts = self.xyzni[mask]
+    #     else:
+    #         bs = self.bs
+    #
+    #     lbs = self.labels[mask]
+    #     return pts, lbs, {'density': local_density, 'bs': bs}
 
     def format_classes(self, labels):
         """Format labels array to match the classes of interest.
