@@ -16,10 +16,10 @@ import torch.utils.data
 import torch.nn.functional as F
 import convpoint.knn.lib.python.nearest_neighbors as nearest_neighbors
 import utils.metrics as metrics
-from airborne_lidar import InformationLogger, print_metric, write_config, read_parameters, wblue, wgreen
+from airborne_lidar.airborne_lidar_utils import InformationLogger, print_metric, write_config, read_parameters, wblue, wgreen
 from pathlib import Path
-from airborne_lidar import prediction2ply
-from airborne_lidar import PartDatasetTrainVal, PartDatasetTest
+from airborne_lidar.airborne_lidar_viz import prediction2ply
+from airborne_lidar.airborne_lidar_datasets import PartDatasetTrainVal, PartDatasetTest
 from mlflow import log_params, set_tracking_uri, set_experiment
 
 
