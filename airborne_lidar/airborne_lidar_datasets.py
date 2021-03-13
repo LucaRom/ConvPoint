@@ -32,6 +32,14 @@ def compute_mask(xyzni, pt, bs):
     return mask
 
 
+def compute_large_mask(xyzni, pt, bs, mask):
+    # build the mask
+    mask_x = np.logical_and(xyzni[:, 0] < pt[0] + bs / 2, xyzni[:, 0] > pt[0] - bs / 2, not mask)
+    mask_y = np.logical_and(xyzni[:, 1] < pt[1] + bs / 2, xyzni[:, 1] > pt[1] - bs / 2, not mask)
+    mask = np.logical_and(mask_x, mask_y)
+    return mask
+
+
 # Part dataset only for training / validation
 class PartDatasetTrainVal():
 
@@ -60,19 +68,20 @@ class PartDatasetTrainVal():
         # Get the features
         self.xyzni = data_file["xyzni"][:]
         self.labels = self.format_classes(data_file["labels"][:])
-        # self.labels = self.format_classes(self.labels)
 
         # pick a random point
         pt_id = random.randint(0, self.xyzni.shape[0] - 1)
         pt = self.xyzni[pt_id, :3]
 
-        # Create the mask and select all points in the column.
-        pts, lbs, local_info = self.adapt_mask(pt)
+        # # Create the mask and select all points in the column.
+        # pts, lbs, local_info = self.adapt_mask(pt)
+        #
+        # # Random selection of npoints in the masked points
+        # choice = np.random.choice(pts.shape[0], self.npoints, replace=True)
+        # pts = pts[choice]
+        # lbs = lbs[choice]
 
-        # Random selection of npoints in the masked points
-        choice = np.random.choice(pts.shape[0], self.npoints, replace=True)
-        pts = pts[choice]
-        lbs = lbs[choice]
+        pts, lbs, local_info = self.multi_scale(pt)
 
         # Separate features from xyz
         if self.features is False:
@@ -100,26 +109,49 @@ class PartDatasetTrainVal():
     def __len__(self):
         return self.iterations
 
-    def adapt_mask(self, pt):
+    def multi_scale(self, pt):
         # First computation of mask and selection of points.
         mask = compute_mask(self.xyzni, pt, self.bs)
         pts = self.xyzni[mask]
-
-        # Check if total number of points in the first mask is within tolerance.
-        local_pt_num = pts.shape[0]
-        local_density = max(int(local_pt_num / self.bs ** 2), 1)
-        pts_num_ratio = self.npoints / local_pt_num
-
-        # Recompute mask with new block size if outside the tolerance.
-        if (local_pt_num > (1 + int(self.tolerance_range[1]) / 100) * self.npoints) or (local_pt_num < (1 - int(self.tolerance_range[0]) / 100) * self.npoints):
-            bs = sqrt(pts_num_ratio) * self.bs
-            mask = compute_mask(self.xyzni, pt, bs)
-            pts = self.xyzni[mask]
-        else:
-            bs = self.bs
-
         lbs = self.labels[mask]
-        return pts, lbs, {'density': local_density, 'bs': bs}
+        local_density = max(int(pts.shape[0] / self.bs ** 2), 1)
+
+        # Random selection of npoints in the masked points
+        choice = np.random.choice(pts.shape[0], self.npoints, replace=True)
+        pts = pts[choice]
+        lbs = lbs[choice]
+
+        # Second computation of mask and selection of points. (second scale)
+        mask = compute_large_mask(self.xyzni, pt, self.bs*2, mask)
+        pts_2 = self.xyzni[mask]
+        lbs_2 = self.labels[mask]
+
+        # Random selection of npoints in the masked points
+        choice = np.random.choice(pts_2.shape[0], self.npoints, replace=True)
+        pts += pts_2[choice]
+        lbs += lbs_2[choice]
+        return pts, lbs, {'density': local_density, 'bs': self.bs}
+
+    # def adapt_mask(self, pt):
+    #     # First computation of mask and selection of points.
+    #     mask = compute_mask(self.xyzni, pt, self.bs)
+    #     pts = self.xyzni[mask]
+    #
+    #     # Check if total number of points in the first mask is within tolerance.
+    #     local_pt_num = pts.shape[0]
+    #     local_density = max(int(local_pt_num / self.bs ** 2), 1)
+    #     pts_num_ratio = self.npoints / local_pt_num
+    #
+    #     # Recompute mask with new block size if outside the tolerance.
+    #     if (local_pt_num > (1 + int(self.tolerance_range[1]) / 100) * self.npoints) or (local_pt_num < (1 - int(self.tolerance_range[0]) / 100) * self.npoints):
+    #         bs = sqrt(pts_num_ratio) * self.bs
+    #         mask = compute_mask(self.xyzni, pt, bs)
+    #         pts = self.xyzni[mask]
+    #     else:
+    #         bs = self.bs
+    #
+    #     lbs = self.labels[mask]
+    #     return pts, lbs, {'density': local_density, 'bs': bs}
 
     def format_classes(self, labels):
         """Format labels array to match the classes of interest.
@@ -165,15 +197,17 @@ class PartDatasetTest():
                 self.pts = np.unique(discretized, axis=0)
                 self.pts = self.pts.astype(np.float) * self.step
 
-        # get all points within block
-        pts, local_info, mask = self.adapt_mask(self.pts[index])
+        # # get all points within block
+        # pts, local_info, mask = self.adapt_mask(self.pts[index])
+        #
+        # # choose right number of points
+        # choice = np.random.choice(pts.shape[0], self.npoints, replace=True)
+        # pts = pts[choice]
 
-        # choose right number of points
-        choice = np.random.choice(pts.shape[0], self.npoints, replace=True)
-        pts = pts[choice]
+        # # indices in the original point cloud
+        # indices = np.where(mask)[0][choice]
 
-        # indices in the original point cloud
-        indices = np.where(mask)[0][choice]
+        pts, local_info, indices = self.multi_scale(self.pts[index])
 
         # Separate features from xyz
         if self.features is False:
@@ -195,27 +229,51 @@ class PartDatasetTest():
 
         return pts, fts, indices
 
-    def adapt_mask(self, pt):
+    def multi_scale(self, pt):
         # First computation of mask and selection of points.
         mask = compute_mask(self.xyzni, pt, self.bs)
         pts = self.xyzni[mask]
+        local_density = max(int(pts.shape[0] / self.bs ** 2), 1)
 
-        # Check if total number of points in the first mask is within tolerance.
-        local_pt_num = max(pts.shape[0], 1)
-        local_density = max(int(local_pt_num / self.bs ** 2), 1)
-        pts_num_ratio = self.npoints / local_pt_num
+        # Random selection of npoints in the masked points
+        choice = np.random.choice(pts.shape[0], self.npoints, replace=True)
+        pts = pts[choice]
 
-        # Recompute mask with new block size if outside the tolerance.
-        if (local_pt_num > (1 + int(self.tolerance_range[1]) / 100) * self.npoints) or \
-                (local_pt_num < (1 - int(self.tolerance_range[0]) / 100) * self.npoints) or \
-                (pts.shape[0] == 0):
-            bs = max(sqrt(pts_num_ratio) * self.bs, 1)
-            mask = compute_mask(self.xyzni, pt, bs)
-            pts = self.xyzni[mask]
-        else:
-            bs = self.bs
+        # Second computation of mask and selection of points. (second scale)
+        mask_2 = compute_large_mask(self.xyzni, pt, self.bs * 2, mask)
+        pts_2 = self.xyzni[mask_2]
 
-        return pts, {'density': local_density, 'bs': bs}, mask
+        # Random selection of npoints in the masked points
+        choice = np.random.choice(pts_2.shape[0], self.npoints, replace=True)
+        pts += pts_2[choice]
+
+        mask = mask or mask_2
+        # indices in the original point cloud
+        indices = np.where(mask)[0][choice]
+
+        return pts, {'density': local_density, 'bs': self.bs}, indices
+
+    # def adapt_mask(self, pt):
+    #     # First computation of mask and selection of points.
+    #     mask = compute_mask(self.xyzni, pt, self.bs)
+    #     pts = self.xyzni[mask]
+    #
+    #     # Check if total number of points in the first mask is within tolerance.
+    #     local_pt_num = max(pts.shape[0], 1)
+    #     local_density = max(int(local_pt_num / self.bs ** 2), 1)
+    #     pts_num_ratio = self.npoints / local_pt_num
+    #
+    #     # Recompute mask with new block size if outside the tolerance.
+    #     if (local_pt_num > (1 + int(self.tolerance_range[1]) / 100) * self.npoints) or \
+    #             (local_pt_num < (1 - int(self.tolerance_range[0]) / 100) * self.npoints) or \
+    #             (pts.shape[0] == 0):
+    #         bs = max(sqrt(pts_num_ratio) * self.bs, 1)
+    #         mask = compute_mask(self.xyzni, pt, bs)
+    #         pts = self.xyzni[mask]
+    #     else:
+    #         bs = self.bs
+    #
+    #     return pts, {'density': local_density, 'bs': bs}, mask
 
     def __len__(self):
         if self.pts is None:
