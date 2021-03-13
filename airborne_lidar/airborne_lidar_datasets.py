@@ -29,13 +29,13 @@ def compute_mask(xyzni, pt, bs):
     mask_x = np.logical_and(xyzni[:, 0] < pt[0] + bs / 2, xyzni[:, 0] > pt[0] - bs / 2)
     mask_y = np.logical_and(xyzni[:, 1] < pt[1] + bs / 2, xyzni[:, 1] > pt[1] - bs / 2)
     mask = np.logical_and(mask_x, mask_y)
-    return mask
+    return mask, mask_x, mask_y
 
 
-def compute_large_mask(xyzni, pt, bs, mask):
+def compute_large_mask(xyzni, pt, bs, mask_x, mask_y):
     # build the mask
-    mask_x = np.logical_and(xyzni[:, 0] < pt[0] + bs / 2, xyzni[:, 0] > pt[0] - bs / 2, not mask)
-    mask_y = np.logical_and(xyzni[:, 1] < pt[1] + bs / 2, xyzni[:, 1] > pt[1] - bs / 2, not mask)
+    mask_x = np.logical_and(xyzni[:, 0] < pt[0] + bs / 2, xyzni[:, 0] > pt[0] - bs / 2, not mask_x)
+    mask_y = np.logical_and(xyzni[:, 1] < pt[1] + bs / 2, xyzni[:, 1] > pt[1] - bs / 2, not mask_y)
     mask = np.logical_and(mask_x, mask_y)
     return mask
 
@@ -111,7 +111,7 @@ class PartDatasetTrainVal():
 
     def multi_scale(self, pt):
         # First computation of mask and selection of points.
-        mask = compute_mask(self.xyzni, pt, self.bs)
+        mask, mx, my = compute_mask(self.xyzni, pt, self.bs)
         pts = self.xyzni[mask]
         lbs = self.labels[mask]
         local_density = max(int(pts.shape[0] / self.bs ** 2), 1)
@@ -122,7 +122,7 @@ class PartDatasetTrainVal():
         lbs = lbs[choice]
 
         # Second computation of mask and selection of points. (second scale)
-        mask = compute_large_mask(self.xyzni, pt, self.bs*2, mask)
+        mask = compute_large_mask(self.xyzni, pt, self.bs*2, mx, my)
         pts_2 = self.xyzni[mask]
         lbs_2 = self.labels[mask]
 
@@ -231,7 +231,7 @@ class PartDatasetTest():
 
     def multi_scale(self, pt):
         # First computation of mask and selection of points.
-        mask = compute_mask(self.xyzni, pt, self.bs)
+        mask, mx, my = compute_mask(self.xyzni, pt, self.bs)
         pts = self.xyzni[mask]
         local_density = max(int(pts.shape[0] / self.bs ** 2), 1)
 
@@ -240,7 +240,7 @@ class PartDatasetTest():
         pts = pts[choice]
 
         # Second computation of mask and selection of points. (second scale)
-        mask_2 = compute_large_mask(self.xyzni, pt, self.bs * 2, mask)
+        mask_2 = compute_large_mask(self.xyzni, pt, self.bs * 2, mx, my)
         pts_2 = self.xyzni[mask_2]
 
         # Random selection of npoints in the masked points
