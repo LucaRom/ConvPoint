@@ -34,8 +34,8 @@ def compute_mask(xyzni, pt, bs):
 
 def compute_large_mask(xyzni, pt, bs, mask_x, mask_y):
     # build the mask
-    mask_x = np.logical_and(xyzni[:, 0] < pt[0] + bs / 2, xyzni[:, 0] > pt[0] - bs / 2, not mask_x)
-    mask_y = np.logical_and(xyzni[:, 1] < pt[1] + bs / 2, xyzni[:, 1] > pt[1] - bs / 2, not mask_y)
+    mask_x = np.logical_and(xyzni[:, 0] < pt[0] + bs / 2, xyzni[:, 0] > pt[0] - bs / 2, np.logical_not(mask_x))
+    mask_y = np.logical_and(xyzni[:, 1] < pt[1] + bs / 2, xyzni[:, 1] > pt[1] - bs / 2, np.logical_not(mask_y))
     mask = np.logical_and(mask_x, mask_y)
     return mask
 
