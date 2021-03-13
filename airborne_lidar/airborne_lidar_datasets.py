@@ -128,8 +128,9 @@ class PartDatasetTrainVal():
 
         # Random selection of npoints in the masked points
         choice = np.random.choice(pts_2.shape[0], self.npoints, replace=True)
-        pts += pts_2[choice]
-        lbs += lbs_2[choice]
+
+        pts = np.concatenate((pts_2[choice], pts))
+        lbs = np.concatenate((lbs_2[choice], lbs))
         return pts, lbs, {'density': local_density, 'bs': self.bs}
 
     # def adapt_mask(self, pt):
