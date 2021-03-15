@@ -252,7 +252,7 @@ class PartDatasetTest():
         # indices in the original point cloud
         indices = np.where(mask)[0][choice]
         indices_2 = np.where(mask_2)[0][choice_2]
-        np.concatenate((indices, indices_2))
+        indices = np.concatenate((indices, indices_2))
 
         return pts, {'density': local_density, 'bs': self.bs}, indices
 
