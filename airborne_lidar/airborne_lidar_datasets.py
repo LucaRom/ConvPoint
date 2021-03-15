@@ -246,7 +246,7 @@ class PartDatasetTest():
 
         # Random selection of npoints in the masked points
         choice = np.random.choice(pts_2.shape[0], self.npoints, replace=True)
-        pts += pts_2[choice]
+        pts = np.concatenate(pts_2[choice], pts)
 
         mask = mask or mask_2
         # indices in the original point cloud
