@@ -245,12 +245,14 @@ class PartDatasetTest():
         pts_2 = self.xyzni[mask_2]
 
         # Random selection of npoints in the masked points
-        choice = np.random.choice(pts_2.shape[0], self.npoints, replace=True)
+        choice_2 = np.random.choice(pts_2.shape[0], self.npoints, replace=True)
         pts = np.concatenate((pts_2[choice], pts))
-        mask = np.concatenate((mask, mask_2))
+        # mask = np.concatenate((mask, mask_2))
 
         # indices in the original point cloud
         indices = np.where(mask)[0][choice]
+        indices_2 = np.where(mask_2)[0][choice_2]
+        np.concatenate((indices, indices_2))
 
         return pts, {'density': local_density, 'bs': self.bs}, indices
 
