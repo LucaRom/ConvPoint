@@ -335,6 +335,10 @@ def test(args, filename, model_folder, info_class, file_idx):
             features = features.cuda()
             pts = pts.cuda()
             outputs = net(features, pts)
+
+            # for multi-scale test, only select the first npoints as prediction.
+            outputs = outputs[0:args['training']['npoints'], :]
+
             t2 = time.time()
 
             outputs_np = outputs.cpu().numpy().reshape((-1, nb_class))
