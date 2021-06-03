@@ -3,7 +3,8 @@
 # add the parent folder to the python path to access convpoint library
 import sys
 import warnings
-sys.path.append('/space/partner/nrcan/geobase/work/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/ConvPoint')
+#sys.path.append('/space/partner/nrcan/geobase/work/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/ConvPoint')
+sys.path.append('/wspace/disk01/lidar/classification_pts/ConvPoint')
 
 import argparse
 import numpy as np
@@ -389,12 +390,17 @@ def test(args, filename, model_folder, info_class, file_idx):
 
 def main():
     args = parse_args()
+
+    print(args['global']['mlruns_dir'])
+
     # mlflow settings
     set_tracking_uri(args['global']['mlruns_dir'])
     set_experiment(args['global']['exp_name'])
     log_params(args['global'])
     log_params(args['training'])
     log_params(args['test'])
+
+
 
     # create the file lists (trn / val / tst)
     print("Create file list...")

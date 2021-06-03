@@ -1,8 +1,13 @@
 global:
-  savedir: /space/partner/nrcan/geobase/work/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/results
-  rootdir: /space/partner/nrcan/geobase/work/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/prepared
-  mlruns_dir: /space/partner/nrcan/geobase/work/transfer/work/deep_learning/mlflow/mlruns
-  exp_name: ConvPoint     # MLFlow experiment name
+  #savedir: /space/partner/nrcan/geobase/work/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/results
+  #rootdir: /space/partner/nrcan/geobase/work/transfer/work/deep_learning/lidar/CMM_2018/convpoint_tests/prepared
+  #mlruns_dir: /space/partner/nrcan/geobase/work/transfer/work/deep_learning/mlflow/mlruns
+
+  savdir : /wspace/disk01/lidar/classification_pts/results/convpoint_v2
+  rootdit: /wspace/disk01/lidar/classification_pts/data/dales_las/prepared
+  mlruns_dir: /wspace/disk01/lidar/classification_pts/results/mlflow/mlruns
+
+  exp_name: ConvPoint_v2     # MLFlow experiment name
 
 training:
   model: SegBig           # Currently the only model available.
